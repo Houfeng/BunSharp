@@ -51,8 +51,8 @@ public static unsafe partial class BunNative
         return pointer == 0 ? null : Marshal.PtrToStringUTF8(pointer);
     }
 
-    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_initialize", StringMarshalling = StringMarshalling.Utf8)]
-    public static partial nint Initialize(string? cwd);
+    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_initialize")]
+    internal static partial nint Initialize(BunInitializeOptions* options);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_destroy")]
     public static partial void Destroy(nint runtime);
@@ -61,10 +61,10 @@ public static unsafe partial class BunNative
     public static partial nint Context(nint runtime);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_eval_string", StringMarshalling = StringMarshalling.Utf8)]
-    public static partial BunEvalResult EvalString(nint runtime, string code);
+    public static partial BunEvalResult EvalString(nint context, string code);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_eval_file", StringMarshalling = StringMarshalling.Utf8)]
-    public static partial BunEvalResult EvalFile(nint runtime, string path);
+    public static partial BunEvalResult EvalFile(nint context, string path);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_run_pending_jobs")]
     public static partial int RunPendingJobs(nint runtime);
@@ -205,7 +205,7 @@ public static unsafe partial class BunNative
     public static partial nint LastError(nint context);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_call_async")]
-    public static partial int CallAsync(nint runtime, BunValue function, BunValue thisValue, int argc, BunValue* argv);
+    public static partial int CallAsync(nint context, BunValue function, BunValue thisValue, int argc, BunValue* argv);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_protect")]
     public static partial void Protect(nint context, BunValue value);

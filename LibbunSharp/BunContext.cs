@@ -28,6 +28,34 @@ public unsafe sealed class BunContext
         }
     }
 
+    public BunEvaluationResult Evaluate(string code)
+    {
+        ArgumentNullException.ThrowIfNull(code);
+        VerifyThread();
+
+        var result = BunNative.EvalString(Handle, code);
+        return new BunEvaluationResult(result.Success != 0, result.ErrorMessage);
+    }
+
+    public BunEvaluationResult EvaluateFile(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        VerifyThread();
+
+        var result = BunNative.EvalFile(Handle, path);
+        return new BunEvaluationResult(result.Success != 0, result.ErrorMessage);
+    }
+
+    public void EvaluateOrThrow(string code)
+    {
+        Evaluate(code).EnsureSuccess();
+    }
+
+    public void EvaluateFileOrThrow(string path)
+    {
+        EvaluateFile(path).EnsureSuccess();
+    }
+
     public BunValue CreateBoolean(bool value) => BunNative.Bool(value ? 1 : 0);
 
     public BunValue CreateNumber(double value) => BunNative.Number(value);
@@ -314,19 +342,18 @@ public unsafe sealed class BunContext
         }
     }
 
-    public int CallAsync(BunRuntime runtime, BunValue function, BunValue thisValue, ReadOnlySpan<BunValue> args)
+    public int CallAsync(BunValue function, BunValue thisValue, ReadOnlySpan<BunValue> args)
     {
-        ArgumentNullException.ThrowIfNull(runtime);
-        runtime.VerifyThread();
+        VerifyThread();
 
         if (args.IsEmpty)
         {
-            return BunNative.CallAsync(runtime.Handle, function, thisValue, 0, null);
+            return BunNative.CallAsync(Handle, function, thisValue, 0, null);
         }
 
         fixed (BunValue* argsPointer = args)
         {
-            return BunNative.CallAsync(runtime.Handle, function, thisValue, args.Length, argsPointer);
+            return BunNative.CallAsync(Handle, function, thisValue, args.Length, argsPointer);
         }
     }
 

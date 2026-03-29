@@ -2,6 +2,14 @@ using System.Runtime.InteropServices;
 
 namespace LibbunSharp.Interop;
 
+internal enum BunNativeDebuggerMode
+{
+    Off = 0,
+    Attach = 1,
+    Wait = 2,
+    Break = 3,
+}
+
 public enum BunTypedArrayKind
 {
     Int8Array = 0,
@@ -48,6 +56,14 @@ public struct BunEvalResult
     public nint Error;
 
     public readonly string? ErrorMessage => Error == 0 ? null : Marshal.PtrToStringUTF8(Error);
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct BunInitializeOptions
+{
+    public nint Cwd;
+    public BunNativeDebuggerMode DebuggerMode;
+    public nint DebuggerListenUrl;
 }
 
 [StructLayout(LayoutKind.Sequential)]

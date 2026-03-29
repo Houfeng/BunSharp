@@ -39,44 +39,54 @@ public sealed class BunRuntime : IDisposable
 
     public static BunRuntime Create(string? cwd = null)
     {
-        BunNativeLibraryResolver.EnsureLoaded();
-        var handle = BunNative.Initialize(cwd);
-        if (handle == 0)
+        return Create(new BunRuntimeOptions
         {
-            throw new BunException("bun_initialize returned a null runtime.");
+            Cwd = cwd,
+        });
+    }
+
+    public static BunRuntime Create(BunRuntimeOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        BunNativeLibraryResolver.EnsureLoaded();
+        Utf8NativeString? cwd = null;
+        Utf8NativeString? debuggerListenUrl = null;
+
+        if (!string.IsNullOrEmpty(options.Cwd))
+        {
+            cwd = Utf8NativeString.Allocate(options.Cwd);
         }
 
-        return new BunRuntime(handle);
-    }
+        if (!string.IsNullOrEmpty(options.DebuggerListenUrl))
+        {
+            debuggerListenUrl = Utf8NativeString.Allocate(options.DebuggerListenUrl);
+        }
 
-    public BunEvaluationResult Evaluate(string code)
-    {
-        ArgumentNullException.ThrowIfNull(code);
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        VerifyThread();
+        try
+        {
+            unsafe
+            {
+                var initializeOptions = new BunInitializeOptions
+                {
+                    Cwd = cwd?.Pointer ?? 0,
+                    DebuggerMode = MapDebuggerMode(options.DebuggerMode),
+                    DebuggerListenUrl = debuggerListenUrl?.Pointer ?? 0,
+                };
 
-        var result = BunNative.EvalString(Handle, code);
-        return new BunEvaluationResult(result.Success != 0, result.ErrorMessage);
-    }
+                var handle = BunNative.Initialize(&initializeOptions);
+                if (handle == 0)
+                {
+                    throw new BunException("bun_initialize returned a null runtime.");
+                }
 
-    public BunEvaluationResult EvaluateFile(string path)
-    {
-        ArgumentNullException.ThrowIfNull(path);
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        VerifyThread();
-
-        var result = BunNative.EvalFile(Handle, path);
-        return new BunEvaluationResult(result.Success != 0, result.ErrorMessage);
-    }
-
-    public void EvaluateOrThrow(string code)
-    {
-        Evaluate(code).EnsureSuccess();
-    }
-
-    public void EvaluateFileOrThrow(string path)
-    {
-        EvaluateFile(path).EnsureSuccess();
+                return new BunRuntime(handle);
+            }
+        }
+        finally
+        {
+            debuggerListenUrl?.Dispose();
+            cwd?.Dispose();
+        }
     }
 
     public bool RunPendingJobs()
@@ -126,5 +136,17 @@ public sealed class BunRuntime : IDisposable
         {
             throw new InvalidOperationException("BunRuntime APIs must be called from the thread that initialized the runtime.");
         }
+    }
+
+    private static BunNativeDebuggerMode MapDebuggerMode(BunDebuggerMode debuggerMode)
+    {
+        return debuggerMode switch
+        {
+            BunDebuggerMode.Off => BunNativeDebuggerMode.Off,
+            BunDebuggerMode.Attach => BunNativeDebuggerMode.Attach,
+            BunDebuggerMode.Wait => BunNativeDebuggerMode.Wait,
+            BunDebuggerMode.Break => BunNativeDebuggerMode.Break,
+            _ => throw new ArgumentOutOfRangeException(nameof(debuggerMode), debuggerMode, "Unsupported debugger mode."),
+        };
     }
 }

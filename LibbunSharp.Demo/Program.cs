@@ -23,7 +23,7 @@ try
 		throw new InvalidOperationException("Failed to register helloFromDotNet on the JS global object.");
 	}
 
-	runtime.EvaluateOrThrow("globalThis.messageFromDotNet = helloFromDotNet('bun');");
+	context.EvaluateOrThrow("globalThis.messageFromDotNet = helloFromDotNet('bun');");
 
 	var result = context.GetProperty(global, "messageFromDotNet");
   var message = context.ToManagedString(result);
