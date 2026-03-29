@@ -12,12 +12,18 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\LibbunSharp\runtimes\**\*.dll;..\LibbunSharp\runtimes\**\*.dylib;..\LibbunSharp\runtimes\**\*.so">
+    <None
+      Include="..\LibbunSharp\runtimes\**\*.dll;..\LibbunSharp\runtimes\**\*.dylib;..\LibbunSharp\runtimes\**\*.so">
       <Link>runtimes/%(RecursiveDir)native/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       <Visible>false</Visible>
     </None>
+  </ItemGroup>
+
+  <!-- 关键在这里：把 C 文件作为原生库包含进来 -->
+  <ItemGroup>
+    <NativeLibrary Include="lib/segment.c" />
   </ItemGroup>
 
 </Project>

@@ -1,38 +1,56 @@
 ﻿using LibbunSharp;
 
-try
+public static class Program
 {
-  using var runtime = BunRuntime.Create();
-  var context = runtime.Context;
-  var global = context.GlobalObject;
-
-  var helloFunction = context.CreateFunction(
-    "helloFromDotNet",
-    static (ctx, args, _) =>
-    {
-      var name = args.Length > 0 ? ctx.ToManagedString(args[0]) : null;
-      name ??= "world";
-
-      Console.WriteLine($"C# callback invoked with '{name}'.");
-      return ctx.CreateString($"Hello, {name}, from .NET.");
-    },
-    argCount: 1);
-
-  if (!context.SetProperty(global, "helloFromDotNet", helloFunction))
+  public static void Main()
   {
-    throw new InvalidOperationException("Failed to register helloFromDotNet on the JS global object.");
+
+    try
+    {
+      using var runtime = BunRuntime.Create();
+      var context = runtime.Context;
+      var global = context.GlobalObject;
+
+      var helloFunction = context.CreateFunction(
+        "helloFromDotNet",
+        static (ctx, args, _) =>
+        {
+          var name = args.Length > 0 ? ctx.ToManagedString(args[0]) : null;
+          name ??= "world";
+
+          Console.WriteLine($"C# callback invoked with '{name}'.");
+          return ctx.CreateString($"Hello, {name}, from .NET.");
+        },
+        argCount: 1);
+
+      if (!context.SetProperty(global, "helloFromDotNet", helloFunction))
+      {
+        throw new InvalidOperationException("Failed to register helloFromDotNet on the JS global object.");
+      }
+
+      var result = context.EvaluateExpression("1+1");
+      var message = context.ToManagedString(result);
+      Console.WriteLine(message);
+
+      // context.Evaluate("console.log('hello from bun');");
+      // context.Evaluate("setTimeout(() => 1, 10);");
+
+      context.EvaluateFile("/Users/houfeng/Repositories/LibbunSharp/LibbunSharp.Demo/assets/main.ts");
+      var tValue = context.GetProperty(context.GlobalObject, "__t");
+      var tString = context.ToManagedString(tValue);
+      Console.WriteLine($"The type of Promise is: {tString}");
+
+      var o = context.EvaluateExpression("Object.create({})");
+
+      while (runtime.RunPendingJobs())
+      {
+        Thread.Sleep(16);
+      }
+      Console.WriteLine("Done.");
+    }
+    catch (Exception ex)
+    {
+      Console.Error.WriteLine(ex.Message);
+    }
   }
-
-  var result = context.EvaluateExpression("1+1");
-  var message = context.ToManagedString(result);
-  Console.WriteLine(message);
-
-  // while (runtime.RunPendingJobs())
-  // {
-  // }
-  Console.WriteLine("Done.");
-}
-catch (Exception ex)
-{
-  Console.Error.WriteLine(ex.Message);
 }
