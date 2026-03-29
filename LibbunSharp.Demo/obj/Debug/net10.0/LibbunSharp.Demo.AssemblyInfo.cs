@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LibbunSharp.Demo")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5b0de44f875d2beb74d22cd5b0c9d1bb428feb8a")]
 [assembly: System.Reflection.AssemblyProductAttribute("LibbunSharp.Demo")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LibbunSharp.Demo")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
