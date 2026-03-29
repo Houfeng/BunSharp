@@ -4,3 +4,4 @@ artifacts/
 
 *.nupkg
 *.snupkg
+.DS_Store

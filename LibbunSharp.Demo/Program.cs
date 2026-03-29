@@ -29,9 +29,9 @@ try
   var message = context.ToManagedString(result);
 	Console.WriteLine(message);
 
-	while (runtime.RunPendingJobs())
-	{
-	}
+	// while (runtime.RunPendingJobs())
+	// {
+	// }
   Console.WriteLine("Done.");
 }
 catch (Exception ex)
