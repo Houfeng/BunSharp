@@ -26,11 +26,13 @@ try
 	runtime.EvaluateOrThrow("globalThis.messageFromDotNet = helloFromDotNet('bun');");
 
 	var result = context.GetProperty(global, "messageFromDotNet");
-	Console.WriteLine(context.ToManagedString(result));
+  var message = context.ToManagedString(result);
+	Console.WriteLine(message);
 
 	while (runtime.RunPendingJobs())
 	{
 	}
+  Console.WriteLine("Done.");
 }
 catch (Exception ex)
 {
