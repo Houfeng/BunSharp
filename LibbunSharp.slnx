@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="LibbunSharp.Demo/LibbunSharp.Demo.csproj" />
+  <Project Path="LibbunSharp/LibbunSharp.csproj" />
+</Solution>
