@@ -598,6 +598,18 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("    }");
         builder.AppendLine("}");
         builder.AppendLine();
+        builder.AppendLine("internal static class __BunGeneratedExportsModuleInitializer");
+        builder.AppendLine("{");
+        builder.AppendLine("    [global::System.Runtime.CompilerServices.ModuleInitializer]");
+        builder.AppendLine("    internal static void Initialize()");
+        builder.AppendLine("    {");
+        builder.AppendLine("        global::LibbunSharp.BunRegistry.RegisterJsExports(");
+        builder.AppendLine("            typeof(BunGeneratedExports).Assembly,");
+        builder.AppendLine("            BunGeneratedExports.RegisterAll,");
+        builder.AppendLine("            BunGeneratedExports.RegisterType);");
+        builder.AppendLine("    }");
+        builder.AppendLine("}");
+        builder.AppendLine();
         AppendCommonHelpers(builder);
 
         foreach (var model in models)
