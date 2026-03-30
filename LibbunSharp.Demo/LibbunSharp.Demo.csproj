@@ -13,7 +13,6 @@
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
-
   <ItemGroup>
     <None
       Include="..\LibbunSharp\runtimes\**\*.dll;..\LibbunSharp\runtimes\**\*.dylib;..\LibbunSharp\runtimes\**\*.so">

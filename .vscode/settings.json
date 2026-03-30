@@ -3,6 +3,7 @@
     "Cdecl",
     "Finalizer",
     "Libbun",
+    "netstandard",
     "snupkg",
     "Wakeup"
   ]

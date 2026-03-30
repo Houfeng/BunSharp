@@ -1,5 +1,29 @@
 ﻿using LibbunSharp;
 
+[JSExport]
+public sealed class DemoGreeter
+{
+  public DemoGreeter(string name, byte[] payload)
+  {
+    Name = name;
+    Payload = payload;
+  }
+
+  public string Name { get; set; }
+
+  public byte[] Payload { get; set; }
+
+  public string describe()
+  {
+    return $"{Name}:{Payload.Length}";
+  }
+
+  public static string Version => "v1";
+
+  [JSExport(false)]
+  public string Hidden => "hidden";
+}
+
 public static class Program
 {
   public static void Main()
@@ -28,9 +52,17 @@ public static class Program
         throw new InvalidOperationException("Failed to register helloFromDotNet on the JS global object.");
       }
 
+      context.ExportType<DemoGreeter>();
+
       var result = context.EvaluateExpression("1+1");
       var message = context.ToManagedString(result);
       Console.WriteLine(message);
+
+      var exportResult = context.EvaluateExpression(@"(() => {
+        const greeter = new DemoGreeter('Ada', new Uint8Array([1, 2, 3, 4]));
+        return `${greeter.describe()}|${greeter.name}|${greeter.payload.length}|${DemoGreeter.version}`;
+      })()");
+      Console.WriteLine(context.ToManagedString(exportResult));
 
       // context.Evaluate("console.log('hello from bun');");
       // context.Evaluate("setTimeout(() => 1, 10);");
