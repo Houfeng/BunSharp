@@ -35,12 +35,19 @@ public static class Program
       // context.Evaluate("console.log('hello from bun');");
       // context.Evaluate("setTimeout(() => 1, 10);");
 
+      context.Evaluate(@"
+        console.time('loop1');
+        let t = 0;
+        for(let i=0; i<=1000000;i++){
+          t+=i;
+        }
+        console.timeEnd('loop1');
+     ");
+
       context.EvaluateFile("/Users/houfeng/Repositories/LibbunSharp/LibbunSharp.Demo/assets/main.ts");
       var tValue = context.GetProperty(context.GlobalObject, "__t");
       var tString = context.ToManagedString(tValue);
       Console.WriteLine($"The type of Promise is: {tString}");
-
-      var o = context.EvaluateExpression("Object.create({})");
 
       while (runtime.RunPendingJobs())
       {
