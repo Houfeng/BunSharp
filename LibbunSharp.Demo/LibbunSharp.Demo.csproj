@@ -9,6 +9,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LibbunSharp\LibbunSharp.csproj" />
+    <ProjectReference Include="..\LibbunSharp.Generator\LibbunSharp.Generator.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
