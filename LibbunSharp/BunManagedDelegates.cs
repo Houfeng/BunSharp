@@ -14,4 +14,12 @@ public delegate BunValue BunManagedClassGetter(BunContext context, BunValue this
 
 public delegate void BunManagedClassSetter(BunContext context, BunValue thisValue, nint nativePtr, BunValue value, nint userdata);
 
+public delegate BunValue BunManagedClassConstructor(BunContext context, nint classHandle, ReadOnlySpan<BunValue> args, nint userdata);
+
+public delegate BunValue BunManagedClassStaticMethod(BunContext context, BunValue thisValue, ReadOnlySpan<BunValue> args, nint userdata);
+
+public delegate BunValue BunManagedClassStaticGetter(BunContext context, BunValue thisValue, nint userdata);
+
+public delegate void BunManagedClassStaticSetter(BunContext context, BunValue thisValue, BunValue value, nint userdata);
+
 public delegate void BunManagedClassFinalizer(nint nativePtr, nint userdata);

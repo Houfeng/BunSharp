@@ -132,6 +132,9 @@ public static unsafe partial class BunNative
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_class_prototype")]
     public static partial BunValue ClassPrototype(nint context, nint klass);
 
+    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_class_constructor")]
+    public static partial BunValue ClassConstructor(nint context, nint klass);
+
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_is_undefined")]
     public static partial int IsUndefined(BunValue value);
 

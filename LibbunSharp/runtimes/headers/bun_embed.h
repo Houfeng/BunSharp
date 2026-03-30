@@ -71,6 +71,26 @@ typedef BunValue (*BunClassGetterFn)(BunContext* ctx, BunValue this_value, void*
 typedef void (*BunClassSetterFn)(BunContext* ctx, BunValue this_value, void* native_ptr,
     BunValue value, void* userdata);
 
+/// Native constructor callback for bun_class_register().
+///
+/// This is invoked for JavaScript `new` calls on the class constructor returned
+/// by bun_class_constructor(). The callback should typically allocate native
+/// state and return a BunClass instance created via bun_class_new().
+typedef BunValue (*BunClassConstructorFn)(BunContext* ctx, BunClass* klass,
+    int argc, const BunValue* argv, void* userdata);
+
+/// Native static method callback for bun_class_register().
+typedef BunValue (*BunClassStaticMethodFn)(BunContext* ctx, BunValue this_value,
+    void* userdata, int argc, const BunValue* argv);
+
+/// Native static property getter callback for bun_class_register().
+typedef BunValue (*BunClassStaticGetterFn)(BunContext* ctx, BunValue this_value,
+    void* userdata);
+
+/// Native static property setter callback for bun_class_register().
+typedef void (*BunClassStaticSetterFn)(BunContext* ctx, BunValue this_value,
+    BunValue value, void* userdata);
+
 /// Finalizer callback for bun_class_new().
 ///
 /// Runs at most once, either when bun_class_dispose() is called or when the JS
@@ -101,10 +121,38 @@ typedef struct {
 typedef struct {
     const char* name;
     size_t name_len;
+    BunClassStaticMethodFn callback;
+    void* userdata;
+    int arg_count;
+    int dont_enum;
+    int dont_delete;
+} BunClassStaticMethodDescriptor;
+
+typedef struct {
+    const char* name;
+    size_t name_len;
+    BunClassStaticGetterFn getter;
+    BunClassStaticSetterFn setter;
+    void* userdata;
+    int read_only;
+    int dont_enum;
+    int dont_delete;
+} BunClassStaticPropertyDescriptor;
+
+typedef struct {
+    const char* name;
+    size_t name_len;
     const BunClassPropertyDescriptor* properties;
     size_t property_count;
     const BunClassMethodDescriptor* methods;
     size_t method_count;
+    BunClassConstructorFn constructor;
+    void* constructor_userdata;
+    int constructor_arg_count;
+    const BunClassStaticPropertyDescriptor* static_properties;
+    size_t static_property_count;
+    const BunClassStaticMethodDescriptor* static_methods;
+    size_t static_method_count;
 } BunClassDescriptor;
 
 /// Predefined immediate values in JSValue64 mode.
@@ -352,6 +400,12 @@ int bun_class_dispose(BunContext* ctx, BunValue value);
 
 /// Return the runtime-local prototype object for a registered class.
 BunValue bun_class_prototype(BunContext* ctx, BunClass* klass);
+
+/// Return the runtime-local constructor function for a registered class.
+///
+/// Returns BUN_UNDEFINED when the class was registered without a constructor
+/// callback.
+BunValue bun_class_constructor(BunContext* ctx, BunClass* klass);
 
 // --------------------------------------------------------------------------
 // Value Introspection & Conversion

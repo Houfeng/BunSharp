@@ -829,47 +829,23 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.Append(property.HasSetter ? "false" : "true");
             builder.AppendLine("));");
         }
-        builder.AppendLine("            var @class = context.RegisterClass(definition);");
-        var factoryName = "__libbun_ctor_" + model.Id;
-        var wrapperExpression = $"(() => {{ const factory = globalThis[\"{factoryName}\"]; return function(...args) {{ return factory(...args); }}; }})()";
-        builder.Append("            var factory = context.CreateFunction(");
-        builder.Append(CSharpLiteral(factoryName));
-        builder.Append(", ConstructorCallback, argCount: ");
+        builder.AppendLine("            definition.Constructor = ConstructorCallback;");
+        builder.Append("            definition.ConstructorArgCount = ");
         builder.Append(model.ConstructorParameters.Length.ToString(CultureInfo.InvariantCulture));
-        builder.AppendLine(");");
-        builder.Append("            __JSExportCommon.EnsurePropertySet(context.SetProperty(context.GlobalObject, ");
-        builder.Append(CSharpLiteral(factoryName));
-        builder.AppendLine(", factory), " + CSharpLiteral(factoryName) + ");");
-        builder.AppendLine("            global::LibbunSharp.BunValue constructor;");
-        builder.AppendLine("            try");
-        builder.AppendLine("            {");
-        builder.Append("                constructor = context.EvaluateExpression(");
-        builder.Append(CSharpLiteral(wrapperExpression));
-        builder.AppendLine(");");
-        builder.AppendLine("            }");
-        builder.AppendLine("            finally");
-        builder.AppendLine("            {");
-        builder.Append("                __JSExportCommon.EnsurePropertySet(context.SetProperty(context.GlobalObject, ");
-        builder.Append(CSharpLiteral(factoryName));
-        builder.AppendLine(", global::LibbunSharp.BunValue.Undefined), " + CSharpLiteral(factoryName) + ");");
-        builder.AppendLine("            }");
-        builder.AppendLine("            __JSExportCommon.EnsurePropertySet(context.SetProperty(constructor, \"prototype\", @class.Prototype), \"prototype\");");
-        builder.AppendLine("            __JSExportCommon.EnsurePropertySet(context.SetProperty(@class.Prototype, \"constructor\", constructor), \"constructor\");");
+        builder.AppendLine(";");
         foreach (var method in model.StaticMethods)
         {
-            builder.Append("            __JSExportCommon.EnsurePropertySet(context.SetProperty(constructor, ");
-            builder.Append(CSharpLiteral(method.ExportName));
-            builder.Append(", context.CreateFunction(");
+            builder.Append("            definition.StaticMethods.Add(new global::LibbunSharp.BunClassStaticMethodDefinition(");
             builder.Append(CSharpLiteral(method.ExportName));
             builder.Append(", ");
             builder.Append(method.WrapperName);
             builder.Append(", argCount: ");
             builder.Append(method.Parameters.Length.ToString(CultureInfo.InvariantCulture));
-            builder.AppendLine(")), " + CSharpLiteral(method.ExportName) + ");");
+            builder.AppendLine("));");
         }
         foreach (var property in model.StaticProperties)
         {
-            builder.Append("            __JSExportCommon.EnsureMemberDefined(context.DefineAccessor(constructor, ");
+            builder.Append("            definition.StaticProperties.Add(new global::LibbunSharp.BunClassStaticPropertyDefinition(");
             builder.Append(CSharpLiteral(property.ExportName));
             builder.Append(", getter: ");
             builder.Append(property.HasGetter ? property.GetterName : "null");
@@ -877,8 +853,16 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.Append(property.HasSetter ? property.SetterName : "null");
             builder.Append(", readOnly: ");
             builder.Append(property.HasSetter ? "false" : "true");
-            builder.AppendLine("), " + CSharpLiteral(property.ExportName) + ");");
+            builder.AppendLine("));");
         }
+        builder.AppendLine("            var @class = context.RegisterClass(definition);");
+        builder.AppendLine("            var constructor = @class.Constructor;");
+        builder.AppendLine("            if (context.IsUndefined(constructor))");
+        builder.AppendLine("            {");
+        builder.Append("                throw new InvalidOperationException(");
+        builder.Append(CSharpLiteral($"Class '{model.ExportName}' did not expose a JS constructor."));
+        builder.AppendLine(");");
+        builder.AppendLine("            }");
         builder.AppendLine();
         builder.AppendLine("            var registration = new RegistrationState(@class, constructor);");
         builder.AppendLine("            Registrations.Add(context.Handle, registration);");
@@ -913,9 +897,11 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        __JSExportCommon.EnsurePropertySet(context.SetProperty(context.GlobalObject, exportName, constructor), exportName);");
         builder.AppendLine("    }");
         builder.AppendLine();
-        builder.Append("    private static global::LibbunSharp.BunValue ConstructorCallback(global::LibbunSharp.BunContext context, global::System.ReadOnlySpan<global::LibbunSharp.BunValue> args, nint userdata)");
+        builder.Append("    private static global::LibbunSharp.BunValue ConstructorCallback(global::LibbunSharp.BunContext context, nint classHandle, global::System.ReadOnlySpan<global::LibbunSharp.BunValue> args, nint userdata)");
         builder.AppendLine();
         builder.AppendLine("    {");
+        builder.AppendLine("        _ = classHandle;");
+        builder.AppendLine("        _ = userdata;");
         builder.Append("        __JSExportCommon.EnsureArgumentCount(");
         builder.Append(CSharpLiteral(model.ExportName));
         builder.Append(", args, ");
@@ -944,7 +930,6 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        try");
         builder.AppendLine("        {");
         builder.AppendLine("            var value = registration.Class.CreateInstance(GCHandle.ToIntPtr(handle), ReleaseHandle);");
-        builder.AppendLine("            context.SetOpaque(value, GCHandle.ToIntPtr(handle));");
         builder.AppendLine("            return value;");
         builder.AppendLine("        }");
         builder.AppendLine("        catch");
@@ -965,10 +950,6 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine();
         builder.AppendLine("        var registration = GetOrCreate(context, publishGlobal: false);");
         builder.AppendLine("        var nativePtr = registration.Class.Unwrap(value);");
-        builder.AppendLine("        if (nativePtr == 0)");
-        builder.AppendLine("        {");
-        builder.AppendLine("            nativePtr = context.GetOpaque(value);");
-        builder.AppendLine("        }");
         builder.AppendLine("        if (nativePtr == 0)");
         builder.AppendLine("        {");
         builder.Append("            throw new InvalidOperationException(");
@@ -1021,6 +1002,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.Append(method.WrapperName);
         builder.AppendLine("(global::LibbunSharp.BunContext context, global::LibbunSharp.BunValue thisValue, nint nativePtr, global::System.ReadOnlySpan<global::LibbunSharp.BunValue> args, nint userdata)");
         builder.AppendLine("    {");
+        builder.AppendLine("        _ = thisValue;");
+        builder.AppendLine("        _ = userdata;");
         builder.Append("        __JSExportCommon.EnsureArgumentCount(");
         builder.Append(CSharpLiteral($"{model.ExportName}.{method.ExportName}"));
         builder.Append(", args, ");
@@ -1076,8 +1059,10 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         {
             builder.Append("    private static global::LibbunSharp.BunValue ");
             builder.Append(property.GetterName);
-            builder.AppendLine("(global::LibbunSharp.BunContext context, global::LibbunSharp.BunValue thisValue)");
+            builder.AppendLine("(global::LibbunSharp.BunContext context, global::LibbunSharp.BunValue thisValue, nint userdata)");
             builder.AppendLine("    {");
+            builder.AppendLine("        _ = thisValue;");
+            builder.AppendLine("        _ = userdata;");
             AppendInvocation(builder, property.PropertyType, $"{model.FullyQualifiedTypeName}.{property.MemberName}", "        ");
             builder.AppendLine("    }");
             builder.AppendLine();
@@ -1087,8 +1072,10 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         {
             builder.Append("    private static void ");
             builder.Append(property.SetterName);
-            builder.AppendLine("(global::LibbunSharp.BunContext context, global::LibbunSharp.BunValue thisValue, global::LibbunSharp.BunValue value)");
+            builder.AppendLine("(global::LibbunSharp.BunContext context, global::LibbunSharp.BunValue thisValue, global::LibbunSharp.BunValue value, nint userdata)");
             builder.AppendLine("    {");
+            builder.AppendLine("        _ = thisValue;");
+            builder.AppendLine("        _ = userdata;");
             builder.Append(model.FullyQualifiedTypeName);
             builder.Append('.');
             builder.Append(property.MemberName);
@@ -1104,8 +1091,10 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
     {
         builder.Append("    private static global::LibbunSharp.BunValue ");
         builder.Append(method.WrapperName);
-        builder.AppendLine("(global::LibbunSharp.BunContext context, global::System.ReadOnlySpan<global::LibbunSharp.BunValue> args, nint userdata)");
+        builder.AppendLine("(global::LibbunSharp.BunContext context, global::LibbunSharp.BunValue thisValue, global::System.ReadOnlySpan<global::LibbunSharp.BunValue> args, nint userdata)");
         builder.AppendLine("    {");
+        builder.AppendLine("        _ = thisValue;");
+        builder.AppendLine("        _ = userdata;");
         builder.Append("        __JSExportCommon.EnsureArgumentCount(");
         builder.Append(CSharpLiteral($"{model.ExportName}.{method.ExportName}"));
         builder.Append(", args, ");

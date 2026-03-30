@@ -28,6 +28,16 @@ public sealed class BunClass : IDisposable
         }
     }
 
+    public BunValue Constructor
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _runtime.VerifyThread();
+            return BunNative.ClassConstructor(_runtime.Context.Handle, Handle);
+        }
+    }
+
     public BunValue CreateInstance(nint nativePtr, BunManagedClassFinalizer? finalizer = null, nint userdata = 0)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -107,6 +117,16 @@ public sealed class BunClassDefinition
     public IList<BunClassMethodDefinition> Methods { get; } = new List<BunClassMethodDefinition>();
 
     public IList<BunClassPropertyDefinition> Properties { get; } = new List<BunClassPropertyDefinition>();
+
+    public BunManagedClassConstructor? Constructor { get; set; }
+
+    public int ConstructorArgCount { get; set; }
+
+    public nint ConstructorUserData { get; set; }
+
+    public IList<BunClassStaticMethodDefinition> StaticMethods { get; } = new List<BunClassStaticMethodDefinition>();
+
+    public IList<BunClassStaticPropertyDefinition> StaticProperties { get; } = new List<BunClassStaticPropertyDefinition>();
 }
 
 public sealed class BunClassMethodDefinition
@@ -165,12 +185,70 @@ public sealed class BunClassPropertyDefinition
     public nint UserData { get; }
 }
 
+public sealed class BunClassStaticMethodDefinition
+{
+    public BunClassStaticMethodDefinition(string name, BunManagedClassStaticMethod callback, int argCount = 0, bool dontEnum = false, bool dontDelete = false, nint userdata = 0)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(callback);
+        Name = name;
+        Callback = callback;
+        ArgCount = argCount;
+        DontEnum = dontEnum;
+        DontDelete = dontDelete;
+        UserData = userdata;
+    }
+
+    public string Name { get; }
+
+    public BunManagedClassStaticMethod Callback { get; }
+
+    public int ArgCount { get; }
+
+    public bool DontEnum { get; }
+
+    public bool DontDelete { get; }
+
+    public nint UserData { get; }
+}
+
+public sealed class BunClassStaticPropertyDefinition
+{
+    public BunClassStaticPropertyDefinition(string name, BunManagedClassStaticGetter? getter = null, BunManagedClassStaticSetter? setter = null, bool readOnly = false, bool dontEnum = false, bool dontDelete = false, nint userdata = 0)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        Name = name;
+        Getter = getter;
+        Setter = setter;
+        ReadOnly = readOnly;
+        DontEnum = dontEnum;
+        DontDelete = dontDelete;
+        UserData = userdata;
+    }
+
+    public string Name { get; }
+
+    public BunManagedClassStaticGetter? Getter { get; }
+
+    public BunManagedClassStaticSetter? Setter { get; }
+
+    public bool ReadOnly { get; }
+
+    public bool DontEnum { get; }
+
+    public bool DontDelete { get; }
+
+    public nint UserData { get; }
+}
+
 internal unsafe sealed class PreparedClassDefinition : IDisposable
 {
     private readonly List<Utf8NativeString> _nameBuffers = [];
     private readonly List<IDisposable> _callbackHandles = [];
     private BunClassMethodDescriptor* _methods;
     private BunClassPropertyDescriptor* _properties;
+    private BunClassStaticMethodDescriptor* _staticMethods;
+    private BunClassStaticPropertyDescriptor* _staticProperties;
     private bool _disposed;
 
     private PreparedClassDefinition()
@@ -210,6 +288,18 @@ internal unsafe sealed class PreparedClassDefinition : IDisposable
             _properties = null;
         }
 
+        if (_staticMethods != null)
+        {
+            NativeMemory.Free(_staticMethods);
+            _staticMethods = null;
+        }
+
+        if (_staticProperties != null)
+        {
+            NativeMemory.Free(_staticProperties);
+            _staticProperties = null;
+        }
+
         foreach (var nameBuffer in _nameBuffers)
         {
             nameBuffer.Dispose();
@@ -225,6 +315,15 @@ internal unsafe sealed class PreparedClassDefinition : IDisposable
         var className = AllocateName(definition.Name);
         _methods = definition.Methods.Count == 0 ? null : (BunClassMethodDescriptor*)NativeMemory.Alloc((nuint)definition.Methods.Count, (nuint)sizeof(BunClassMethodDescriptor));
         _properties = definition.Properties.Count == 0 ? null : (BunClassPropertyDescriptor*)NativeMemory.Alloc((nuint)definition.Properties.Count, (nuint)sizeof(BunClassPropertyDescriptor));
+        _staticMethods = definition.StaticMethods.Count == 0 ? null : (BunClassStaticMethodDescriptor*)NativeMemory.Alloc((nuint)definition.StaticMethods.Count, (nuint)sizeof(BunClassStaticMethodDescriptor));
+        _staticProperties = definition.StaticProperties.Count == 0 ? null : (BunClassStaticPropertyDescriptor*)NativeMemory.Alloc((nuint)definition.StaticProperties.Count, (nuint)sizeof(BunClassStaticPropertyDescriptor));
+        BunCallbackHandle? constructorHandle = null;
+
+        if (definition.Constructor is not null)
+        {
+            constructorHandle = BunManagedCallbackRegistry.CreateClassConstructor(definition.Constructor, definition.ConstructorUserData);
+            _callbackHandles.Add(constructorHandle);
+        }
 
         for (var index = 0; index < definition.Methods.Count; index++)
         {
@@ -270,6 +369,50 @@ internal unsafe sealed class PreparedClassDefinition : IDisposable
             };
         }
 
+        for (var index = 0; index < definition.StaticMethods.Count; index++)
+        {
+            var method = definition.StaticMethods[index];
+            var methodName = AllocateName(method.Name);
+            var callbackHandle = BunManagedCallbackRegistry.CreateClassStaticMethod(method.Callback, method.UserData);
+            _callbackHandles.Add(callbackHandle);
+
+            _staticMethods[index] = new BunClassStaticMethodDescriptor
+            {
+                Name = methodName.Pointer,
+                NameLength = methodName.ByteLength,
+                Callback = BunManagedCallbackRegistry.ClassStaticMethodPointer,
+                UserData = callbackHandle.Pointer,
+                ArgCount = method.ArgCount,
+                DontEnum = method.DontEnum ? 1 : 0,
+                DontDelete = method.DontDelete ? 1 : 0,
+            };
+        }
+
+        for (var index = 0; index < definition.StaticProperties.Count; index++)
+        {
+            var property = definition.StaticProperties[index];
+            var propertyName = AllocateName(property.Name);
+            BunCallbackHandle? propertyHandle = null;
+
+            if (property.Getter is not null || property.Setter is not null)
+            {
+                propertyHandle = BunManagedCallbackRegistry.CreateClassStaticProperty(property.Getter, property.Setter, property.UserData);
+                _callbackHandles.Add(propertyHandle);
+            }
+
+            _staticProperties[index] = new BunClassStaticPropertyDescriptor
+            {
+                Name = propertyName.Pointer,
+                NameLength = propertyName.ByteLength,
+                Getter = property.Getter is null ? 0 : BunManagedCallbackRegistry.ClassStaticGetterPointer,
+                Setter = property.Setter is null ? 0 : BunManagedCallbackRegistry.ClassStaticSetterPointer,
+                UserData = propertyHandle?.Pointer ?? 0,
+                ReadOnly = property.ReadOnly ? 1 : 0,
+                DontEnum = property.DontEnum ? 1 : 0,
+                DontDelete = property.DontDelete ? 1 : 0,
+            };
+        }
+
         Descriptor = new BunClassDescriptor
         {
             Name = className.Pointer,
@@ -278,6 +421,13 @@ internal unsafe sealed class PreparedClassDefinition : IDisposable
             PropertyCount = checked((nuint)definition.Properties.Count),
             Methods = _methods,
             MethodCount = checked((nuint)definition.Methods.Count),
+            Constructor = constructorHandle is null ? 0 : BunManagedCallbackRegistry.ClassConstructorPointer,
+            ConstructorUserData = constructorHandle?.Pointer ?? 0,
+            ConstructorArgCount = definition.ConstructorArgCount,
+            StaticProperties = _staticProperties,
+            StaticPropertyCount = checked((nuint)definition.StaticProperties.Count),
+            StaticMethods = _staticMethods,
+            StaticMethodCount = checked((nuint)definition.StaticMethods.Count),
         };
     }
 

@@ -47,6 +47,18 @@ public delegate BunValue BunClassGetterFunction(nint ctx, BunValue thisValue, ni
 public delegate void BunClassSetterFunction(nint ctx, BunValue thisValue, nint nativePtr, BunValue value, nint userdata);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+public unsafe delegate BunValue BunClassConstructorFunction(nint ctx, nint klass, int argc, BunValue* argv, nint userdata);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+public unsafe delegate BunValue BunClassStaticMethodFunction(nint ctx, BunValue thisValue, nint userdata, int argc, BunValue* argv);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+public delegate BunValue BunClassStaticGetterFunction(nint ctx, BunValue thisValue, nint userdata);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+public delegate void BunClassStaticSetterFunction(nint ctx, BunValue thisValue, BunValue value, nint userdata);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 public delegate void BunClassFinalizerFunction(nint nativePtr, nint userdata);
 
 [StructLayout(LayoutKind.Sequential)]
@@ -109,6 +121,31 @@ public struct BunClassPropertyDescriptor
 }
 
 [StructLayout(LayoutKind.Sequential)]
+public struct BunClassStaticMethodDescriptor
+{
+    public nint Name;
+    public nuint NameLength;
+    public nint Callback;
+    public nint UserData;
+    public int ArgCount;
+    public int DontEnum;
+    public int DontDelete;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct BunClassStaticPropertyDescriptor
+{
+    public nint Name;
+    public nuint NameLength;
+    public nint Getter;
+    public nint Setter;
+    public nint UserData;
+    public int ReadOnly;
+    public int DontEnum;
+    public int DontDelete;
+}
+
+[StructLayout(LayoutKind.Sequential)]
 public unsafe struct BunClassDescriptor
 {
     public nint Name;
@@ -117,4 +154,11 @@ public unsafe struct BunClassDescriptor
     public nuint PropertyCount;
     public BunClassMethodDescriptor* Methods;
     public nuint MethodCount;
+    public nint Constructor;
+    public nint ConstructorUserData;
+    public int ConstructorArgCount;
+    public BunClassStaticPropertyDescriptor* StaticProperties;
+    public nuint StaticPropertyCount;
+    public BunClassStaticMethodDescriptor* StaticMethods;
+    public nuint StaticMethodCount;
 }
