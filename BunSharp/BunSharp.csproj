@@ -5,12 +5,32 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- NuGet package metadata -->
+    <PackageId>BunSharp</PackageId>
+    <Version>0.1.0</Version>
+    <Description>A .NET binding for the Bun embed API. Run JavaScript/TypeScript from .NET and export C# types into the JS environment.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
+  <!-- Development: reference Generator as a Roslyn analyzer -->
   <ItemGroup>
     <ProjectReference Include="..\BunSharp.Generator\BunSharp.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!-- Pack: bundle Generator DLL as an analyzer inside the NuGet package -->
+  <ItemGroup>
+    <None Include="..\BunSharp.Generator\bin\$(Configuration)\netstandard2.0\BunSharp.Generator.dll"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false" />
+  </ItemGroup>
+
+  <!-- Pack: include README -->
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>

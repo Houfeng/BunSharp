@@ -1,0 +1,21 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Shared package metadata -->
+    <Authors>Houfeng</Authors>
+    <PackageProjectUrl>https://github.com/Houfeng/BunSharp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Houfeng/BunSharp</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <Copyright>Copyright © Houfeng</Copyright>
+    <PackageTags>bun;javascript;typescript;embedding;interop;js-runtime</PackageTags>
+
+    <!-- Source link -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+</Project>

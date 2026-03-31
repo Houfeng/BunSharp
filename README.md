@@ -115,7 +115,7 @@ Console.WriteLine(context.ToManagedString(value));
 ```csharp
 [JSExport]          // enable export
 [JSExport(true)]    // same as above
-[JSExport("name")] // enable export and override the JS name
+[JSExport("name")]  // enable export and override the JS name
 [JSExport(false)]   // disable export
 ```
 
