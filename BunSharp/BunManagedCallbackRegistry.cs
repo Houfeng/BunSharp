@@ -257,8 +257,10 @@ internal static unsafe class BunManagedCallbackRegistry
                 {
                     callbackHandle.Dispose();
                 }
-
-                outerHandle.Free();
+                else
+                {
+                    outerHandle.Free();
+                }
             }
         }
         catch
@@ -293,6 +295,7 @@ internal static unsafe class BunManagedCallbackRegistry
 internal sealed class BunCallbackHandle : IDisposable
 {
     private nint _handlePtr;
+    private nint _disposerHandlePtr;
     private readonly Delegate? _delegate;
 
     public BunCallbackHandle(object state)
@@ -310,12 +313,23 @@ internal sealed class BunCallbackHandle : IDisposable
 
     public nint Pointer { get; }
 
+    public void SetDisposerHandle(nint disposerHandlePtr)
+    {
+        _disposerHandlePtr = disposerHandlePtr;
+    }
+
     public void Dispose()
     {
         var ptr = Interlocked.Exchange(ref _handlePtr, 0);
         if (ptr != 0)
         {
             GCHandle.FromIntPtr(ptr).Free();
+        }
+
+        var disposerPtr = Interlocked.Exchange(ref _disposerHandlePtr, 0);
+        if (disposerPtr != 0)
+        {
+            GCHandle.FromIntPtr(disposerPtr).Free();
         }
     }
 }

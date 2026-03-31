@@ -93,7 +93,9 @@ public unsafe sealed class BunContext
         {
             var function = BunNative.Function(Handle, name, BunManagedCallbackRegistry.HostFunctionPointer, handle.Pointer, argCount);
             var disposerHandle = GCHandle.Alloc(handle);
-            BunNative.DefineFinalizer(Handle, function, BunManagedCallbackRegistry.CallbackHandleDisposerPointer, GCHandle.ToIntPtr(disposerHandle));
+            var disposerPtr = GCHandle.ToIntPtr(disposerHandle);
+            handle.SetDisposerHandle(disposerPtr);
+            BunNative.DefineFinalizer(Handle, function, BunManagedCallbackRegistry.CallbackHandleDisposerPointer, disposerPtr);
             owner.Retain(handle);
             return function;
         }
