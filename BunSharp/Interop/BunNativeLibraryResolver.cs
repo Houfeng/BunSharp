@@ -1,7 +1,7 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-namespace LibbunSharp.Interop;
+namespace BunSharp.Interop;
 
 internal static class BunNativeLibraryResolver
 {

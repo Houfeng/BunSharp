@@ -1,6 +1,6 @@
-# LibbunSharp
+# BunSharp
 
-LibbunSharp is a .NET binding for the Bun embed API. It lets you create a Bun runtime, execute JavaScript or TypeScript, and export C# types into the JS environment.
+BunSharp is a .NET binding for the Bun embed API. It lets you create a Bun runtime, execute JavaScript or TypeScript, and export C# types into the JS environment.
 
 ## Features
 
@@ -12,15 +12,15 @@ LibbunSharp is a .NET binding for the Bun embed API. It lets you create a Bun ru
 ## Installation
 
 ```bash
-dotnet add package LibbunSharp
+dotnet add package BunSharp
 ```
 
-The `JSExport` source generator is wired through the main package. Consumer projects do not need to reference `LibbunSharp.Generator` directly.
+The `JSExport` source generator is wired through the main package. Consumer projects do not need to reference `BunSharp.Generator` directly.
 
 ## Basic Usage
 
 ```csharp
-using LibbunSharp;
+using BunSharp;
 
 using var runtime = BunRuntime.Create();
 var context = runtime.Context;
@@ -34,7 +34,7 @@ Console.WriteLine(context.ToInt32(result));
 ## Export a C# Class to JavaScript
 
 ```csharp
-using LibbunSharp;
+using BunSharp;
 
 [JSExport]
 public sealed class DemoGreeter
@@ -92,7 +92,7 @@ Console.WriteLine(context.ToManagedString(value));
 ## Host Functions
 
 ```csharp
-using LibbunSharp;
+using BunSharp;
 
 using var runtime = BunRuntime.Create();
 var context = runtime.Context;

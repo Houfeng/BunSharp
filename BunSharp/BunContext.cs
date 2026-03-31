@@ -1,6 +1,6 @@
-using LibbunSharp.Interop;
+using BunSharp.Interop;
 
-namespace LibbunSharp;
+namespace BunSharp;
 
 public unsafe sealed class BunContext
 {

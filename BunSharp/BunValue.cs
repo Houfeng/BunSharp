@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace LibbunSharp;
+namespace BunSharp;
 
 [StructLayout(LayoutKind.Sequential)]
 public readonly struct BunValue : IEquatable<BunValue>

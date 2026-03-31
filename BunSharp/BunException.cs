@@ -1,4 +1,4 @@
-namespace LibbunSharp;
+namespace BunSharp;
 
 public sealed class BunException : Exception
 {

@@ -1,4 +1,4 @@
-namespace LibbunSharp;
+namespace BunSharp;
 
 [
   AttributeUsage(AttributeTargets.Class |

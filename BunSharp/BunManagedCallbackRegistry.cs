@@ -1,8 +1,8 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using LibbunSharp.Interop;
+using BunSharp.Interop;
 
-namespace LibbunSharp;
+namespace BunSharp;
 
 internal static unsafe class BunManagedCallbackRegistry
 {

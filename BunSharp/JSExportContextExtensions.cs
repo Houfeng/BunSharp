@@ -1,6 +1,6 @@
 using System.Reflection;
 
-namespace LibbunSharp;
+namespace BunSharp;
 
 public static class JSExportContextExtensions
 {
@@ -16,7 +16,7 @@ public static class JSExportContextExtensions
 
         if (!BunRegistry.TryGetJsExports(type.Assembly, out _, out var registerType) || registerType is null)
         {
-            throw new InvalidOperationException($"No generated LibbunSharp exports were registered for assembly '{type.Assembly.GetName().Name}'.");
+            throw new InvalidOperationException($"No generated BunSharp exports were registered for assembly '{type.Assembly.GetName().Name}'.");
         }
 
         if (!registerType(context, type))
@@ -32,7 +32,7 @@ public static class JSExportContextExtensions
 
         if (!BunRegistry.TryGetJsExports(assembly, out var registerAll, out _) || registerAll is null)
         {
-            throw new InvalidOperationException($"No generated LibbunSharp exports were registered for assembly '{assembly.GetName().Name}'.");
+            throw new InvalidOperationException($"No generated BunSharp exports were registered for assembly '{assembly.GetName().Name}'.");
         }
 
         registerAll(context);

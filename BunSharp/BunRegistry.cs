@@ -1,6 +1,6 @@
 using System.Reflection;
 
-namespace LibbunSharp;
+namespace BunSharp;
 
 public static class BunRegistry
 {

@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
-using LibbunSharp.Interop;
+using BunSharp.Interop;
 
-namespace LibbunSharp;
+namespace BunSharp;
 
 public sealed class BunClass : IDisposable
 {

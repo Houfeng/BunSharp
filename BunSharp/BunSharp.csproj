@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\LibbunSharp.Generator\LibbunSharp.Generator.csproj"
+    <ProjectReference Include="..\BunSharp.Generator\BunSharp.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>

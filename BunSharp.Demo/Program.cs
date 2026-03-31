@@ -1,4 +1,4 @@
-﻿using LibbunSharp;
+﻿using BunSharp;
 
 [JSExport]
 public sealed class DemoGreeter
@@ -76,7 +76,7 @@ public static class Program
         console.timeEnd('loop1');
      ");
 
-      context.EvaluateFile("/Users/houfeng/Repositories/LibbunSharp/LibbunSharp.Demo/assets/main.ts");
+      context.EvaluateFile(Path.GetFullPath("../../../assets/main.ts", AppDomain.CurrentDomain.BaseDirectory));
       var tValue = context.GetProperty(context.GlobalObject, "__t");
       var tString = context.ToManagedString(tValue);
       Console.WriteLine($"The type of Promise is: {tString}");

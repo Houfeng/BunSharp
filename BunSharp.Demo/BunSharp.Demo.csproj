@@ -8,14 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\LibbunSharp\LibbunSharp.csproj" />
-    <ProjectReference Include="..\LibbunSharp.Generator\LibbunSharp.Generator.csproj"
+    <ProjectReference Include="..\BunSharp\BunSharp.csproj" />
+    <ProjectReference Include="..\BunSharp.Generator\BunSharp.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
     <None
-      Include="..\LibbunSharp\runtimes\**\*.dll;..\LibbunSharp\runtimes\**\*.dylib;..\LibbunSharp\runtimes\**\*.so">
+      Include="..\BunSharp\runtimes\**\*.dll;..\BunSharp\runtimes\**\*.dylib;..\BunSharp\runtimes\**\*.so">
       <Link>runtimes/%(RecursiveDir)native/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>

@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace LibbunSharp.Interop;
+namespace BunSharp.Interop;
 
 public static unsafe partial class BunNative
 {
