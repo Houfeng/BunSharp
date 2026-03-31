@@ -26,6 +26,8 @@ internal static unsafe class BunManagedCallbackRegistry
 
     public static nint ClassFinalizerPointer => (nint)(delegate* unmanaged[Cdecl]<nint, nint, void>)&ClassFinalizerThunk;
 
+    public static nint CallbackHandleDisposerPointer => (nint)(delegate* unmanaged[Cdecl]<nint, void>)&CallbackHandleDisposerThunk;
+
     public static BunCallbackHandle CreateHost(BunManagedHostCallback callback, nint userdata)
     {
         return new BunCallbackHandle(new HostCallbackState(callback, userdata));
@@ -237,6 +239,25 @@ internal static unsafe class BunManagedCallbackRegistry
         {
             var state = GetState<ClassFinalizerCallbackState>(userdata);
             state.Callback(nativePtr, state.UserData);
+        }
+        catch
+        {
+        }
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void CallbackHandleDisposerThunk(nint userdata)
+    {
+        try
+        {
+            if (userdata != 0)
+            {
+                var handle = GCHandle.FromIntPtr(userdata);
+                if (handle.IsAllocated)
+                {
+                    handle.Free();
+                }
+            }
         }
         catch
         {

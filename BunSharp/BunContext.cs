@@ -91,6 +91,7 @@ public unsafe sealed class BunContext
         try
         {
             var function = BunNative.Function(Handle, name, BunManagedCallbackRegistry.HostFunctionPointer, handle.Pointer, argCount);
+            BunNative.DefineFinalizer(Handle, function, BunManagedCallbackRegistry.CallbackHandleDisposerPointer, handle.Pointer);
             owner.Retain(handle);
             return function;
         }
@@ -444,6 +445,12 @@ public unsafe sealed class BunContext
     private BunRuntime GetOwningRuntime()
     {
         return _runtime ?? throw new InvalidOperationException("This BunContext was created from an unmanaged callback and cannot retain managed resources.");
+    }
+
+    public void RegisterCleanup(Action callback)
+    {
+        ArgumentNullException.ThrowIfNull(callback);
+        GetOwningRuntime().RegisterCleanup(callback);
     }
 
     private void VerifyThread()

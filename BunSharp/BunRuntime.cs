@@ -5,6 +5,7 @@ namespace BunSharp;
 public sealed class BunRuntime : IDisposable
 {
     private readonly List<IDisposable> _ownedResources = [];
+    private readonly List<Action> _cleanupCallbacks = [];
     private readonly int _threadId;
     private BunContext? _context;
     private bool _disposed;
@@ -115,6 +116,13 @@ public sealed class BunRuntime : IDisposable
             Handle = 0;
         }
 
+        foreach (var callback in _cleanupCallbacks)
+        {
+            callback();
+        }
+
+        _cleanupCallbacks.Clear();
+
         for (var index = _ownedResources.Count - 1; index >= 0; index--)
         {
             _ownedResources[index].Dispose();
@@ -128,6 +136,12 @@ public sealed class BunRuntime : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _ownedResources.Add(resource);
+    }
+
+    internal void RegisterCleanup(Action callback)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _cleanupCallbacks.Add(callback);
     }
 
     internal void VerifyThread()
