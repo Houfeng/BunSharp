@@ -1,13 +1,28 @@
 # BunSharp
 
-BunSharp is a .NET binding for the Bun embed API. It lets you create a Bun runtime, execute JavaScript or TypeScript, and export C# types into the JS environment.
+[![NuGet](https://img.shields.io/nuget/v/BunSharp.svg)](https://www.nuget.org/packages/BunSharp)
+[![.NET](https://img.shields.io/badge/.NET-10.0-512bd4)](https://dotnet.microsoft.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+BunSharp is a .NET binding for the [Bun](https://bun.sh) embed API. It lets you create a Bun runtime, execute JavaScript or TypeScript, and export C# types into the JS environment.
 
 ## Features
 
 - Evaluate JavaScript and TypeScript from .NET
 - Register host functions on the JS global object
 - Export C# classes with `JSExportAttribute`
-- Support instance methods, instance properties, static members, and `byte[] -> Uint8Array`
+- Support instance methods, instance properties, static members, and `byte[]` ↔ `Uint8Array`
+- No runtime reflection — AOT friendly
+
+## Requirements
+
+- .NET 10.0 or later
+
+| Platform | Architecture | Supported |
+|----------|-------------|:---------:|
+| Windows  | x64         | ✅        |
+| Linux    | x64         | ✅        |
+| macOS    | arm64       | ✅        |
 
 ## Installation
 
@@ -15,7 +30,28 @@ BunSharp is a .NET binding for the Bun embed API. It lets you create a Bun runti
 dotnet add package BunSharp
 ```
 
-The `JSExport` source generator is wired through the main package. Consumer projects do not need to reference `BunSharp.Generator` directly.
+Or in your project file:
+
+```xml
+<ItemGroup>
+  <PackageReference Include="BunSharp" Version="x.y.z" />
+</ItemGroup>
+```
+
+`BunSharp` automatically pulls in `BunSharp.Generator` as a Roslyn analyzer. No additional setup is required for `JSExport` to work.
+
+### Explicit Generator Configuration
+
+If you need to pin the generator version independently from the main package, exclude the bundled analyzer and add `BunSharp.Generator` directly:
+
+```xml
+<ItemGroup>
+  <PackageReference Include="BunSharp" Version="x.y.z" ExcludeAssets="analyzers" />
+  <PackageReference Include="BunSharp.Generator" Version="x.y.z" PrivateAssets="all" />
+</ItemGroup>
+```
+
+> **Note:** If analyzers are disabled (e.g. via `<EmitCompilerGeneratedFiles>false</EmitCompilerGeneratedFiles>`) without the explicit reference above, `JSExport` will not generate the necessary glue code and compilation will fail.
 
 ## Basic Usage
 
@@ -109,3 +145,11 @@ var hello = context.CreateFunction(
 context.SetProperty(context.GlobalObject, "helloFromDotNet", hello);
 context.Evaluate("console.log(helloFromDotNet('Bun')); ");
 ```
+
+## Contributing
+
+Bug reports and pull requests are welcome on [GitHub](https://github.com/Houfeng/BunSharp). Please open an issue before submitting large changes.
+
+## License
+
+[MIT](LICENSE)

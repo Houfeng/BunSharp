@@ -2,7 +2,7 @@ using System.Reflection;
 
 namespace BunSharp;
 
-public static class BunRegistry
+public static class JSExportRegistry
 {
 	private readonly record struct JsExportRegistration(
 		Action<BunContext> RegisterAll,
@@ -11,7 +11,7 @@ public static class BunRegistry
 	private static readonly object SyncRoot = new();
 	private static readonly Dictionary<Assembly, JsExportRegistration> JsExports = new();
 
-	public static void RegisterJsExports(
+	public static void RegisterExports(
 		Assembly assembly,
 		Action<BunContext> registerAll,
 		Func<BunContext, Type, bool> registerType)
@@ -26,7 +26,7 @@ public static class BunRegistry
 		}
 	}
 
-	public static bool TryGetJsExports(
+	internal static bool TryGetExports(
 		Assembly assembly,
 		out Action<BunContext>? registerAll,
 		out Func<BunContext, Type, bool>? registerType)

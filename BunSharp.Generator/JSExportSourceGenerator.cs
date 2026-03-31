@@ -603,7 +603,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("    [global::System.Runtime.CompilerServices.ModuleInitializer]");
         builder.AppendLine("    internal static void Initialize()");
         builder.AppendLine("    {");
-        builder.AppendLine("        global::BunSharp.BunRegistry.RegisterJsExports(");
+        builder.AppendLine("        global::BunSharp.JSExportRegistry.RegisterExports(");
         builder.AppendLine("            typeof(BunGeneratedExports).Assembly,");
         builder.AppendLine("            BunGeneratedExports.RegisterAll,");
         builder.AppendLine("            BunGeneratedExports.RegisterType);");

@@ -14,7 +14,7 @@ public static class JSExportContextExtensions
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(type);
 
-        if (!BunRegistry.TryGetJsExports(type.Assembly, out _, out var registerType) || registerType is null)
+        if (!JSExportRegistry.TryGetExports(type.Assembly, out _, out var registerType) || registerType is null)
         {
             throw new InvalidOperationException($"No generated BunSharp exports were registered for assembly '{type.Assembly.GetName().Name}'.");
         }
@@ -30,7 +30,7 @@ public static class JSExportContextExtensions
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(assembly);
 
-        if (!BunRegistry.TryGetJsExports(assembly, out var registerAll, out _) || registerAll is null)
+        if (!JSExportRegistry.TryGetExports(assembly, out var registerAll, out _) || registerAll is null)
         {
             throw new InvalidOperationException($"No generated BunSharp exports were registered for assembly '{assembly.GetName().Name}'.");
         }
