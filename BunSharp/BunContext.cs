@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using BunSharp.Interop;
 
 namespace BunSharp;
@@ -91,7 +92,8 @@ public unsafe sealed class BunContext
         try
         {
             var function = BunNative.Function(Handle, name, BunManagedCallbackRegistry.HostFunctionPointer, handle.Pointer, argCount);
-            BunNative.DefineFinalizer(Handle, function, BunManagedCallbackRegistry.CallbackHandleDisposerPointer, handle.Pointer);
+            var disposerHandle = GCHandle.Alloc(handle);
+            BunNative.DefineFinalizer(Handle, function, BunManagedCallbackRegistry.CallbackHandleDisposerPointer, GCHandle.ToIntPtr(disposerHandle));
             owner.Retain(handle);
             return function;
         }

@@ -252,11 +252,13 @@ internal static unsafe class BunManagedCallbackRegistry
         {
             if (userdata != 0)
             {
-                var handle = GCHandle.FromIntPtr(userdata);
-                if (handle.IsAllocated)
+                var outerHandle = GCHandle.FromIntPtr(userdata);
+                if (outerHandle.Target is BunCallbackHandle callbackHandle)
                 {
-                    handle.Free();
+                    callbackHandle.Dispose();
                 }
+
+                outerHandle.Free();
             }
         }
         catch
@@ -290,13 +292,14 @@ internal static unsafe class BunManagedCallbackRegistry
 
 internal sealed class BunCallbackHandle : IDisposable
 {
-    private GCHandle _handle;
+    private nint _handlePtr;
     private readonly Delegate? _delegate;
 
     public BunCallbackHandle(object state)
     {
-        _handle = GCHandle.Alloc(state, GCHandleType.Normal);
-        Pointer = GCHandle.ToIntPtr(_handle);
+        var handle = GCHandle.Alloc(state, GCHandleType.Normal);
+        _handlePtr = GCHandle.ToIntPtr(handle);
+        Pointer = _handlePtr;
     }
 
     public BunCallbackHandle(Delegate callback)
@@ -309,9 +312,10 @@ internal sealed class BunCallbackHandle : IDisposable
 
     public void Dispose()
     {
-        if (_handle.IsAllocated)
+        var ptr = Interlocked.Exchange(ref _handlePtr, 0);
+        if (ptr != 0)
         {
-            _handle.Free();
+            GCHandle.FromIntPtr(ptr).Free();
         }
     }
 }
