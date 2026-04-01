@@ -4,11 +4,11 @@ namespace BunSharp;
 
 public static class JSExportRegistry
 {
-    // ConcurrentDictionary gives lock-free reads, which matters because
-    // TryExportType is called on the Bun runtime thread while RegisterExport
-    // is called on the registering thread (typically at startup).
-    // [ThreadStatic] is NOT applicable here: this is a global registry whose
-    // entries must be visible across all threads.
+    // ConcurrentDictionary is used here purely for simplicity: it eliminates the
+    // need for a manual SyncRoot + lock pair. There is no hot-path concern —
+    // RegisterExport and ExportType are both called only once during initialization,
+    // not during JS execution. [ThreadStatic] is NOT applicable: this is a global
+    // registry whose entries must be visible across all threads.
     private static readonly ConcurrentDictionary<Type, Func<BunContext, bool>> JsExports = new();
 
     public static void RegisterExport(
