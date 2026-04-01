@@ -270,8 +270,11 @@ public unsafe sealed class BunContext
         var handle = BunManagedCallbackRegistry.CreateFinalizer(finalizer, userdata);
         try
         {
-            var result = BunNative.DefineFinalizer(Handle, target, BunManagedCallbackRegistry.FinalizerPointer, handle.Pointer) != 0;
-            owner.Retain(handle);
+            var disposerHandle = GCHandle.Alloc(handle);
+            var disposerPtr = GCHandle.ToIntPtr(disposerHandle);
+            handle.SetDisposerHandle(disposerPtr);
+            var result = BunNative.DefineFinalizer(Handle, target, BunManagedCallbackRegistry.FinalizerPointer, disposerPtr) != 0;
+            owner.RetainWithAutoRelease(handle);
             return result;
         }
         catch
