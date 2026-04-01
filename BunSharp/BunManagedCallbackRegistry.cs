@@ -335,6 +335,7 @@ internal sealed class BunCallbackHandle : IDisposable
     private nint _handlePtr;
     private nint _disposerHandlePtr;
     private readonly Delegate? _delegate;
+    private Action? _removeFromOwner;
 
     public BunCallbackHandle(object state)
     {
@@ -356,12 +357,15 @@ internal sealed class BunCallbackHandle : IDisposable
         _disposerHandlePtr = disposerHandlePtr;
     }
 
+    internal void SetRemoveFromOwner(Action? action) => _removeFromOwner = action;
+
     public void Dispose()
     {
         var ptr = Interlocked.Exchange(ref _handlePtr, 0);
         if (ptr != 0)
         {
             GCHandle.FromIntPtr(ptr).Free();
+            Interlocked.Exchange(ref _removeFromOwner, null)?.Invoke();
         }
 
         var disposerPtr = Interlocked.Exchange(ref _disposerHandlePtr, 0);

@@ -96,7 +96,7 @@ public unsafe sealed class BunContext
             var disposerPtr = GCHandle.ToIntPtr(disposerHandle);
             handle.SetDisposerHandle(disposerPtr);
             BunNative.DefineFinalizer(Handle, function, BunManagedCallbackRegistry.CallbackHandleDisposerPointer, disposerPtr);
-            owner.Retain(handle);
+            owner.RetainWithAutoRelease(handle);
             return function;
         }
         catch

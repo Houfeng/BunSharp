@@ -4,7 +4,7 @@ namespace BunSharp;
 
 public sealed class BunRuntime : IDisposable
 {
-    private readonly List<IDisposable> _ownedResources = [];
+    private readonly HashSet<IDisposable> _ownedResources = [];
     private readonly List<Action> _cleanupCallbacks = [];
     private readonly int _threadId;
     private BunContext? _context;
@@ -123,12 +123,13 @@ public sealed class BunRuntime : IDisposable
 
         _cleanupCallbacks.Clear();
 
-        for (var index = _ownedResources.Count - 1; index >= 0; index--)
-        {
-            _ownedResources[index].Dispose();
-        }
-
+        var snapshot = _ownedResources.Count > 0 ? _ownedResources.ToArray() : null;
         _ownedResources.Clear();
+        if (snapshot is not null)
+        {
+            for (var i = snapshot.Length - 1; i >= 0; i--)
+                snapshot[i].Dispose();
+        }
         if (_context is not null)
         {
             BunManagedCallbackRegistry.removeContextCache(_context.Handle);
@@ -140,6 +141,13 @@ public sealed class BunRuntime : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _ownedResources.Add(resource);
+    }
+
+    internal void RetainWithAutoRelease(BunCallbackHandle handle)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _ownedResources.Add(handle);
+        handle.SetRemoveFromOwner(() => _ownedResources.Remove(handle));
     }
 
     internal void RegisterCleanup(Action callback)
