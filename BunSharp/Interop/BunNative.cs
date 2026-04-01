@@ -87,7 +87,7 @@ public static unsafe partial class BunNative
         }
     }
 
-    public static int DefineGetter(nint context, BunValue @object, string key, nint getter, int dontEnum = 0, int dontDelete = 0)
+    public static int DefineGetter(nint context, BunValue @object, string key, nint getter, nint userdata, int dontEnum = 0, int dontDelete = 0)
     {
         int count = Encoding.UTF8.GetByteCount(key);
         if (count <= Utf8StackThreshold)
@@ -95,7 +95,7 @@ public static unsafe partial class BunNative
             byte* buf = stackalloc byte[count + 1];
             Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
             buf[count] = 0;
-            return DefineGetterCore(context, @object, buf, (nuint)count, getter, dontEnum, dontDelete);
+            return DefineGetterCore(context, @object, buf, (nuint)count, getter, userdata, dontEnum, dontDelete);
         }
         else
         {
@@ -104,13 +104,13 @@ public static unsafe partial class BunNative
             {
                 Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
                 buf[count] = 0;
-                return DefineGetterCore(context, @object, buf, (nuint)count, getter, dontEnum, dontDelete);
+                return DefineGetterCore(context, @object, buf, (nuint)count, getter, userdata, dontEnum, dontDelete);
             }
             finally { NativeMemory.Free(buf); }
         }
     }
 
-    public static int DefineSetter(nint context, BunValue @object, string key, nint setter, int dontEnum = 0, int dontDelete = 0)
+    public static int DefineSetter(nint context, BunValue @object, string key, nint setter, nint userdata, int dontEnum = 0, int dontDelete = 0)
     {
         int count = Encoding.UTF8.GetByteCount(key);
         if (count <= Utf8StackThreshold)
@@ -118,7 +118,7 @@ public static unsafe partial class BunNative
             byte* buf = stackalloc byte[count + 1];
             Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
             buf[count] = 0;
-            return DefineSetterCore(context, @object, buf, (nuint)count, setter, dontEnum, dontDelete);
+            return DefineSetterCore(context, @object, buf, (nuint)count, setter, userdata, dontEnum, dontDelete);
         }
         else
         {
@@ -127,13 +127,13 @@ public static unsafe partial class BunNative
             {
                 Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
                 buf[count] = 0;
-                return DefineSetterCore(context, @object, buf, (nuint)count, setter, dontEnum, dontDelete);
+                return DefineSetterCore(context, @object, buf, (nuint)count, setter, userdata, dontEnum, dontDelete);
             }
             finally { NativeMemory.Free(buf); }
         }
     }
 
-    public static int DefineAccessor(nint context, BunValue @object, string key, nint getter, nint setter, int readOnly = 0, int dontEnum = 0, int dontDelete = 0)
+    public static int DefineAccessor(nint context, BunValue @object, string key, nint getter, nint setter, nint userdata, int readOnly = 0, int dontEnum = 0, int dontDelete = 0)
     {
         int count = Encoding.UTF8.GetByteCount(key);
         if (count <= Utf8StackThreshold)
@@ -141,7 +141,7 @@ public static unsafe partial class BunNative
             byte* buf = stackalloc byte[count + 1];
             Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
             buf[count] = 0;
-            return DefineAccessorCore(context, @object, buf, (nuint)count, getter, setter, readOnly, dontEnum, dontDelete);
+            return DefineAccessorCore(context, @object, buf, (nuint)count, getter, setter, userdata, readOnly, dontEnum, dontDelete);
         }
         else
         {
@@ -150,7 +150,7 @@ public static unsafe partial class BunNative
             {
                 Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
                 buf[count] = 0;
-                return DefineAccessorCore(context, @object, buf, (nuint)count, getter, setter, readOnly, dontEnum, dontDelete);
+                return DefineAccessorCore(context, @object, buf, (nuint)count, getter, setter, userdata, readOnly, dontEnum, dontDelete);
             }
             finally { NativeMemory.Free(buf); }
         }
@@ -291,13 +291,13 @@ public static unsafe partial class BunNative
     public static partial BunValue GetIndex(nint context, BunValue @object, uint index);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_define_getter")]
-    private static partial int DefineGetterCore(nint context, BunValue @object, byte* key, nuint keyLength, nint getter, int dontEnum, int dontDelete);
+    private static partial int DefineGetterCore(nint context, BunValue @object, byte* key, nuint keyLength, nint getter, nint userdata, int dontEnum, int dontDelete);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_define_setter")]
-    private static partial int DefineSetterCore(nint context, BunValue @object, byte* key, nuint keyLength, nint setter, int dontEnum, int dontDelete);
+    private static partial int DefineSetterCore(nint context, BunValue @object, byte* key, nuint keyLength, nint setter, nint userdata, int dontEnum, int dontDelete);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_define_accessor")]
-    private static partial int DefineAccessorCore(nint context, BunValue @object, byte* key, nuint keyLength, nint getter, nint setter, int readOnly, int dontEnum, int dontDelete);
+    private static partial int DefineAccessorCore(nint context, BunValue @object, byte* key, nuint keyLength, nint getter, nint setter, nint userdata, int readOnly, int dontEnum, int dontDelete);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_define_finalizer")]
     public static partial int DefineFinalizer(nint context, BunValue @object, nint finalizer, nint userdata);

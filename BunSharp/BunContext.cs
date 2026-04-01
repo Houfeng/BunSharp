@@ -200,7 +200,7 @@ public unsafe sealed class BunContext
         var handle = BunManagedCallbackRegistry.CreateGetter(getter);
         try
         {
-            var result = BunNative.DefineGetter(Handle, target, key, handle.Pointer, dontEnum ? 1 : 0, dontDelete ? 1 : 0) != 0;
+            var result = BunNative.DefineGetter(Handle, target, key, BunManagedCallbackRegistry.GetterPointer, handle.Pointer, dontEnum ? 1 : 0, dontDelete ? 1 : 0) != 0;
             owner.Retain(handle);
             return result;
         }
@@ -221,7 +221,7 @@ public unsafe sealed class BunContext
         var handle = BunManagedCallbackRegistry.CreateSetter(setter);
         try
         {
-            var result = BunNative.DefineSetter(Handle, target, key, handle.Pointer, dontEnum ? 1 : 0, dontDelete ? 1 : 0) != 0;
+            var result = BunNative.DefineSetter(Handle, target, key, BunManagedCallbackRegistry.SetterPointer, handle.Pointer, dontEnum ? 1 : 0, dontDelete ? 1 : 0) != 0;
             owner.Retain(handle);
             return result;
         }
@@ -238,49 +238,26 @@ public unsafe sealed class BunContext
         VerifyThread();
 
         var owner = GetOwningRuntime();
-        BunCallbackHandle? getterHandle = null;
-        BunCallbackHandle? setterHandle = null;
-
+        var handle = BunManagedCallbackRegistry.CreateAccessor(getter, setter);
         try
         {
-            if (getter is not null)
-            {
-                getterHandle = BunManagedCallbackRegistry.CreateGetter(getter);
-            }
-
-            if (setter is not null)
-            {
-                setterHandle = BunManagedCallbackRegistry.CreateSetter(setter);
-            }
-
             var result = BunNative.DefineAccessor(
                 Handle,
                 target,
                 key,
-                getterHandle?.Pointer ?? 0,
-                setterHandle?.Pointer ?? 0,
+                getter is not null ? BunManagedCallbackRegistry.GetterPointer : 0,
+                setter is not null ? BunManagedCallbackRegistry.SetterPointer : 0,
+                handle.Pointer,
                 readOnly ? 1 : 0,
                 dontEnum ? 1 : 0,
                 dontDelete ? 1 : 0) != 0;
-
-            if (getterHandle is not null)
-            {
-                owner.Retain(getterHandle);
-                getterHandle = null;
-            }
-
-            if (setterHandle is not null)
-            {
-                owner.Retain(setterHandle);
-                setterHandle = null;
-            }
-
+            owner.Retain(handle);
             return result;
         }
-        finally
+        catch
         {
-            getterHandle?.Dispose();
-            setterHandle?.Dispose();
+            handle.Dispose();
+            throw;
         }
     }
 

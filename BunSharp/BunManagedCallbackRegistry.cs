@@ -28,6 +28,10 @@ internal static unsafe class BunManagedCallbackRegistry
 
     public static nint CallbackHandleDisposerPointer => (nint)(delegate* unmanaged[Cdecl]<nint, void>)&CallbackHandleDisposerThunk;
 
+    public static nint GetterPointer => (nint)(delegate* unmanaged[Cdecl]<nint, BunValue, nint, BunValue>)&GetterThunk;
+
+    public static nint SetterPointer => (nint)(delegate* unmanaged[Cdecl]<nint, BunValue, BunValue, nint, void>)&SetterThunk;
+
     [ThreadStatic]
     private static Dictionary<nint, BunContext>? t_contextCache;
 
@@ -58,35 +62,17 @@ internal static unsafe class BunManagedCallbackRegistry
 
     public static BunCallbackHandle CreateGetter(BunManagedGetter callback)
     {
-        BunGetterFunction nativeCallback = (context, thisValue) =>
-        {
-            try
-            {
-                return callback(GetOrCreateContext(context), thisValue);
-            }
-            catch
-            {
-                return BunValue.Undefined;
-            }
-        };
-
-        return new BunCallbackHandle(nativeCallback);
+        return new BunCallbackHandle(new GetterSetterCallbackState(callback, null));
     }
 
     public static BunCallbackHandle CreateSetter(BunManagedSetter callback)
     {
-        BunSetterFunction nativeCallback = (context, thisValue, value) =>
-        {
-            try
-            {
-                callback(GetOrCreateContext(context), thisValue, value);
-            }
-            catch
-            {
-            }
-        };
+        return new BunCallbackHandle(new GetterSetterCallbackState(null, callback));
+    }
 
-        return new BunCallbackHandle(nativeCallback);
+    public static BunCallbackHandle CreateAccessor(BunManagedGetter? getter, BunManagedSetter? setter)
+    {
+        return new BunCallbackHandle(new GetterSetterCallbackState(getter, setter));
     }
 
     public static BunCallbackHandle CreateFinalizer(BunManagedFinalizer callback, nint userdata)
@@ -269,6 +255,33 @@ internal static unsafe class BunManagedCallbackRegistry
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static BunValue GetterThunk(nint context, BunValue thisValue, nint userdata)
+    {
+        try
+        {
+            var state = GetState<GetterSetterCallbackState>(userdata);
+            return state.Getter is null ? BunValue.Undefined : state.Getter(GetOrCreateContext(context), thisValue);
+        }
+        catch
+        {
+            return BunValue.Undefined;
+        }
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void SetterThunk(nint context, BunValue thisValue, BunValue value, nint userdata)
+    {
+        try
+        {
+            var state = GetState<GetterSetterCallbackState>(userdata);
+            state.Setter?.Invoke(GetOrCreateContext(context), thisValue, value);
+        }
+        catch
+        {
+        }
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void CallbackHandleDisposerThunk(nint userdata)
     {
         try
@@ -313,6 +326,8 @@ internal static unsafe class BunManagedCallbackRegistry
     private sealed record ClassStaticPropertyCallbackState(BunManagedClassStaticGetter? Getter, BunManagedClassStaticSetter? Setter, nint UserData);
 
     private sealed record ClassFinalizerCallbackState(BunManagedClassFinalizer Callback, nint UserData);
+
+    private sealed record GetterSetterCallbackState(BunManagedGetter? Getter, BunManagedSetter? Setter);
 }
 
 internal sealed class BunCallbackHandle : IDisposable

@@ -29,10 +29,10 @@ public enum BunTypedArrayKind
 public unsafe delegate BunValue BunHostFunction(nint ctx, int argc, BunValue* argv, nint userdata);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-public delegate BunValue BunGetterFunction(nint ctx, BunValue thisValue);
+public delegate BunValue BunGetterFunction(nint ctx, BunValue thisValue, nint userdata);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-public delegate void BunSetterFunction(nint ctx, BunValue thisValue, BunValue value);
+public delegate void BunSetterFunction(nint ctx, BunValue thisValue, BunValue value, nint userdata);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 public delegate void BunFinalizerFunction(nint userdata);
