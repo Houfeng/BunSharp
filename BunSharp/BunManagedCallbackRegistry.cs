@@ -32,26 +32,38 @@ internal static unsafe class BunManagedCallbackRegistry
 
     public static nint SetterPointer => (nint)(delegate* unmanaged[Cdecl]<nint, BunValue, BunValue, nint, void>)&SetterThunk;
 
+    // Single-slot thread-local cache for BunContext.
+    // Bun runs on a single thread, so each thread sees at most one context handle
+    // in the vast majority of cases. A direct nint comparison is orders of magnitude
+    // cheaper than a Dictionary hash lookup on every JS→C# callback.
     [ThreadStatic]
-    private static Dictionary<nint, BunContext>? t_contextCache;
+    private static nint t_cachedContextHandle;
+
+    [ThreadStatic]
+    private static BunContext? t_cachedContext;
 
     private static BunContext GetOrCreateContext(nint handle)
     {
-        var cache = t_contextCache ??= new Dictionary<nint, BunContext>();
-        if (!cache.TryGetValue(handle, out var ctx))
-        {
-            ctx = new BunContext(handle);
-            cache[handle] = ctx;
-        }
+        // Fast path: handle matches the cached slot — return immediately with no allocation.
+        if (t_cachedContextHandle == handle && t_cachedContext is not null)
+            return t_cachedContext;
+
+        // Slow path: first call on this thread, or a different context handle.
+        // BunContext is a lightweight unmanaged-handle wrapper, so constructing one is cheap.
+        var ctx = new BunContext(handle);
+        t_cachedContextHandle = handle;
+        t_cachedContext = ctx;
         return ctx;
     }
 
     internal static void removeContextCache(nint handle)
     {
-        var cache = t_contextCache;
-        if (cache is not null)
+        // Clear the slot when the runtime owning this context is disposed,
+        // so a future runtime reusing the same handle value doesn't get a stale wrapper.
+        if (t_cachedContextHandle == handle)
         {
-            cache.Remove(handle);
+            t_cachedContextHandle = 0;
+            t_cachedContext = null;
         }
     }
 
