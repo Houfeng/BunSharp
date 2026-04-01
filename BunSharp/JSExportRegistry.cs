@@ -1,50 +1,44 @@
-using System.Reflection;
-
 namespace BunSharp;
 
 public static class JSExportRegistry
 {
-	private readonly record struct JsExportRegistration(
-		Action<BunContext> RegisterAll,
-		Func<BunContext, Type, bool> RegisterType);
-
 	private static readonly object SyncRoot = new();
-	private static readonly Dictionary<Assembly, JsExportRegistration> JsExports = new();
+	private static readonly Dictionary<Type, Func<BunContext, bool>> JsExports = new();
 
-	public static void RegisterExports(
-		Assembly assembly,
-		Action<BunContext> registerAll,
-		Func<BunContext, Type, bool> registerType)
+	public static void RegisterExport(
+		Type exportType,
+		Func<BunContext, bool> register)
 	{
-		ArgumentNullException.ThrowIfNull(assembly);
-		ArgumentNullException.ThrowIfNull(registerAll);
-		ArgumentNullException.ThrowIfNull(registerType);
-
+		ArgumentNullException.ThrowIfNull(exportType);
+		ArgumentNullException.ThrowIfNull(register);
 		lock (SyncRoot)
 		{
-			JsExports[assembly] = new JsExportRegistration(registerAll, registerType);
+			JsExports[exportType] = register;
 		}
 	}
 
-	internal static bool TryGetExports(
-		Assembly assembly,
-		out Action<BunContext>? registerAll,
-		out Func<BunContext, Type, bool>? registerType)
+	private static bool TryExportType(BunContext context, Type type)
 	{
-		ArgumentNullException.ThrowIfNull(assembly);
-
+		Func<BunContext, bool>? handler;
 		lock (SyncRoot)
 		{
-			if (JsExports.TryGetValue(assembly, out var registration))
-			{
-				registerAll = registration.RegisterAll;
-				registerType = registration.RegisterType;
-				return true;
-			}
+			JsExports.TryGetValue(type, out handler);
 		}
+		return handler is not null && handler(context);
+	}
 
-		registerAll = null;
-		registerType = null;
-		return false;
+	public static void ExportType(this BunContext context, Type type)
+	{
+		ArgumentNullException.ThrowIfNull(context);
+		ArgumentNullException.ThrowIfNull(type);
+		if (!TryExportType(context, type))
+		{
+			throw new InvalidOperationException($"Type '{type.FullName}' is not registered for JS export.");
+		}
+	}
+
+	public static void ExportType<T>(this BunContext context)
+	{
+		ExportType(context, typeof(T));
 	}
 }

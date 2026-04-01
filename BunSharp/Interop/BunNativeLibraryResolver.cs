@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace BunSharp.Interop;
@@ -21,7 +20,28 @@ internal static class BunNativeLibraryResolver
                 return;
             }
 
-            NativeLibrary.SetDllImportResolver(typeof(BunNativeLibraryResolver).Assembly, Resolve);
+            NativeLibrary.SetDllImportResolver(typeof(BunNativeLibraryResolver).Assembly, (libraryName, _, _) =>
+            {
+                if (!string.Equals(libraryName, LibraryName, StringComparison.Ordinal))
+                {
+                    return 0;
+                }
+
+                lock (SyncRoot)
+                {
+                    if (s_libraryHandle != 0)
+                    {
+                        return s_libraryHandle;
+                    }
+
+                    if (TryLoadLibrary(out s_libraryHandle, out s_lastSearchPaths))
+                    {
+                        return s_libraryHandle;
+                    }
+
+                    return 0;
+                }
+            });
             s_initialized = true;
         }
     }
@@ -37,41 +57,18 @@ internal static class BunNativeLibraryResolver
                 return;
             }
 
-            if (!TryLoadLibrary(typeof(BunNativeLibraryResolver).Assembly, out s_libraryHandle, out s_lastSearchPaths))
+            if (!TryLoadLibrary(out s_libraryHandle, out s_lastSearchPaths))
             {
                 throw new DllNotFoundException($"Unable to load native Bun library '{LibraryName}'. Searched: {string.Join(", ", s_lastSearchPaths ?? Array.Empty<string>())}");
             }
         }
     }
 
-    private static nint Resolve(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
-    {
-        if (!string.Equals(libraryName, LibraryName, StringComparison.Ordinal))
-        {
-            return 0;
-        }
-
-        lock (SyncRoot)
-        {
-            if (s_libraryHandle != 0)
-            {
-                return s_libraryHandle;
-            }
-
-            if (TryLoadLibrary(assembly, out s_libraryHandle, out s_lastSearchPaths))
-            {
-                return s_libraryHandle;
-            }
-
-            return 0;
-        }
-    }
-
-    private static bool TryLoadLibrary(Assembly assembly, out nint handle, out string[] searchedPaths)
+    private static bool TryLoadLibrary(out nint handle, out string[] searchedPaths)
     {
         var searchPaths = new List<string>();
 
-        foreach (var candidate in EnumerateCandidates(assembly))
+        foreach (var candidate in EnumerateCandidates())
         {
             searchPaths.Add(candidate);
             if (NativeLibrary.TryLoad(candidate, out handle))
@@ -86,9 +83,8 @@ internal static class BunNativeLibraryResolver
         return false;
     }
 
-    private static IEnumerable<string> EnumerateCandidates(Assembly assembly)
+    private static IEnumerable<string> EnumerateCandidates()
     {
-        var assemblyDirectory = Path.GetDirectoryName(assembly.Location) ?? AppContext.BaseDirectory;
         var baseDirectory = AppContext.BaseDirectory;
         var rid = GetRuntimeIdentifier();
 
@@ -96,15 +92,8 @@ internal static class BunNativeLibraryResolver
         {
             yield return fileName;
             yield return Path.Combine(baseDirectory, fileName);
-            if (!string.Equals(baseDirectory, assemblyDirectory, StringComparison.Ordinal))
-            {
-                yield return Path.Combine(assemblyDirectory, fileName);
-            }
-
             yield return Path.Combine(baseDirectory, "runtimes", rid, "native", fileName);
-            yield return Path.Combine(assemblyDirectory, "runtimes", rid, "native", fileName);
             yield return Path.Combine(baseDirectory, "runtimes", rid, fileName);
-            yield return Path.Combine(assemblyDirectory, "runtimes", rid, fileName);
         }
     }
 

@@ -564,49 +564,19 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("using System.Collections.Generic;");
         builder.AppendLine("using System.Runtime.InteropServices;");
         builder.AppendLine();
-        builder.AppendLine("public static class BunGeneratedExports");
-        builder.AppendLine("{");
-        builder.AppendLine("    public static void RegisterAll(global::BunSharp.BunContext context)");
-        builder.AppendLine("    {");
-        builder.AppendLine("        ArgumentNullException.ThrowIfNull(context);");
-        foreach (var model in models)
-        {
-            builder.Append("        ");
-            builder.Append(model.Id);
-            builder.AppendLine(".Register(context);");
-        }
-        builder.AppendLine("    }");
-        builder.AppendLine();
-        builder.AppendLine("    public static bool RegisterType(global::BunSharp.BunContext context, global::System.Type type)");
-        builder.AppendLine("    {");
-        builder.AppendLine("        ArgumentNullException.ThrowIfNull(context);");
-        builder.AppendLine("        ArgumentNullException.ThrowIfNull(type);");
-        foreach (var model in models)
-        {
-            builder.Append("        if (type == typeof(");
-            builder.Append(model.FullyQualifiedTypeName);
-            builder.AppendLine("))");
-            builder.AppendLine("        {");
-            builder.Append("            ");
-            builder.Append(model.Id);
-            builder.AppendLine(".Register(context);");
-            builder.AppendLine("            return true;");
-            builder.AppendLine("        }");
-        }
-        builder.AppendLine();
-        builder.AppendLine("        return false;");
-        builder.AppendLine("    }");
-        builder.AppendLine("}");
-        builder.AppendLine();
         builder.AppendLine("internal static class __BunGeneratedExportsModuleInitializer");
         builder.AppendLine("{");
         builder.AppendLine("    [global::System.Runtime.CompilerServices.ModuleInitializer]");
         builder.AppendLine("    internal static void Initialize()");
         builder.AppendLine("    {");
-        builder.AppendLine("        global::BunSharp.JSExportRegistry.RegisterExports(");
-        builder.AppendLine("            typeof(BunGeneratedExports).Assembly,");
-        builder.AppendLine("            BunGeneratedExports.RegisterAll,");
-        builder.AppendLine("            BunGeneratedExports.RegisterType);");
+        foreach (var model in models)
+        {
+            builder.Append("        global::BunSharp.JSExportRegistry.RegisterExport(typeof(");
+            builder.Append(model.FullyQualifiedTypeName);
+            builder.Append("), context => { ");
+            builder.Append(model.Id);
+            builder.AppendLine(".Register(context); return true; });");
+        }
         builder.AppendLine("    }");
         builder.AppendLine("}");
         builder.AppendLine();
