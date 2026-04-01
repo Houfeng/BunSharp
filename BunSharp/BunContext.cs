@@ -109,13 +109,47 @@ public unsafe sealed class BunContext
     public BunValue CreateArrayBuffer(nint data, nuint length, BunManagedFinalizer? finalizer = null, nint userdata = 0)
     {
         VerifyThread();
-        return CreateMemoryBackedValue(data, length, finalizer, userdata, static (context, pointer, size, finalizerPtr, userData) => BunNative.ArrayBuffer(context, pointer, size, finalizerPtr, userData));
+        if (finalizer is null)
+        {
+            return BunNative.ArrayBuffer(Handle, data, length, 0, userdata);
+        }
+
+        var owner = GetOwningRuntime();
+        var handle = BunManagedCallbackRegistry.CreateFinalizer(finalizer, userdata);
+        try
+        {
+            var value = BunNative.ArrayBuffer(Handle, data, length, BunManagedCallbackRegistry.FinalizerPointer, handle.Pointer);
+            owner.Retain(handle);
+            return value;
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
     }
 
     public BunValue CreateTypedArray(BunTypedArrayKind kind, nint data, nuint elementCount, BunManagedFinalizer? finalizer = null, nint userdata = 0)
     {
         VerifyThread();
-        return CreateMemoryBackedValue(data, elementCount, finalizer, userdata, (context, pointer, size, finalizerPtr, userData) => BunNative.TypedArray(context, kind, pointer, size, finalizerPtr, userData));
+        if (finalizer is null)
+        {
+            return BunNative.TypedArray(Handle, kind, data, elementCount, 0, userdata);
+        }
+
+        var owner = GetOwningRuntime();
+        var handle = BunManagedCallbackRegistry.CreateFinalizer(finalizer, userdata);
+        try
+        {
+            var value = BunNative.TypedArray(Handle, kind, data, elementCount, BunManagedCallbackRegistry.FinalizerPointer, handle.Pointer);
+            owner.Retain(handle);
+            return value;
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
     }
 
     public bool TryGetArrayBuffer(BunValue value, out BunArrayBufferInfo info)
@@ -403,28 +437,6 @@ public unsafe sealed class BunContext
         finally
         {
             prepared?.Dispose();
-        }
-    }
-
-    private BunValue CreateMemoryBackedValue(nint data, nuint size, BunManagedFinalizer? finalizer, nint userdata, Func<nint, nint, nuint, nint, nint, BunValue> factory)
-    {
-        if (finalizer is null)
-        {
-            return factory(Handle, data, size, 0, userdata);
-        }
-
-        var owner = GetOwningRuntime();
-        var handle = BunManagedCallbackRegistry.CreateFinalizer(finalizer, userdata);
-        try
-        {
-            var value = factory(Handle, data, size, BunManagedCallbackRegistry.FinalizerPointer, handle.Pointer);
-            owner.Retain(handle);
-            return value;
-        }
-        catch
-        {
-            handle.Dispose();
-            throw;
         }
     }
 

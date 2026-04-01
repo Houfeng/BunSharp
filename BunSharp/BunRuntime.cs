@@ -129,6 +129,7 @@ public sealed class BunRuntime : IDisposable
         }
 
         _ownedResources.Clear();
+        BunManagedCallbackRegistry.removeContextCache(Context.Handle);
         _disposed = true;
     }
 

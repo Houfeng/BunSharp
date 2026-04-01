@@ -16,34 +16,144 @@ public static unsafe partial class BunNative
         return checked((nuint)Encoding.UTF8.GetByteCount(value));
     }
 
+    private const int Utf8StackThreshold = 256;
+
     public static BunValue CreateString(nint context, string value)
     {
-        return String(context, value, GetUtf8ByteCount(value));
+        int count = Encoding.UTF8.GetByteCount(value);
+        if (count <= Utf8StackThreshold)
+        {
+            byte* buf = stackalloc byte[count + 1];
+            Encoding.UTF8.GetBytes(value, new Span<byte>(buf, count));
+            buf[count] = 0;
+            return StringCore(context, buf, (nuint)count);
+        }
+        else
+        {
+            byte* buf = (byte*)NativeMemory.Alloc((nuint)count + 1);
+            try
+            {
+                Encoding.UTF8.GetBytes(value, new Span<byte>(buf, count));
+                buf[count] = 0;
+                return StringCore(context, buf, (nuint)count);
+            }
+            finally { NativeMemory.Free(buf); }
+        }
     }
 
     public static int Set(nint context, BunValue @object, string key, BunValue value)
     {
-        return Set(context, @object, key, GetUtf8ByteCount(key), value);
+        int count = Encoding.UTF8.GetByteCount(key);
+        if (count <= Utf8StackThreshold)
+        {
+            byte* buf = stackalloc byte[count + 1];
+            Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
+            buf[count] = 0;
+            return SetCore(context, @object, buf, (nuint)count, value);
+        }
+        else
+        {
+            byte* buf = (byte*)NativeMemory.Alloc((nuint)count + 1);
+            try
+            {
+                Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
+                buf[count] = 0;
+                return SetCore(context, @object, buf, (nuint)count, value);
+            }
+            finally { NativeMemory.Free(buf); }
+        }
     }
 
     public static BunValue Get(nint context, BunValue @object, string key)
     {
-        return Get(context, @object, key, GetUtf8ByteCount(key));
+        int count = Encoding.UTF8.GetByteCount(key);
+        if (count <= Utf8StackThreshold)
+        {
+            byte* buf = stackalloc byte[count + 1];
+            Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
+            buf[count] = 0;
+            return GetCore(context, @object, buf, (nuint)count);
+        }
+        else
+        {
+            byte* buf = (byte*)NativeMemory.Alloc((nuint)count + 1);
+            try
+            {
+                Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
+                buf[count] = 0;
+                return GetCore(context, @object, buf, (nuint)count);
+            }
+            finally { NativeMemory.Free(buf); }
+        }
     }
 
     public static int DefineGetter(nint context, BunValue @object, string key, nint getter, int dontEnum = 0, int dontDelete = 0)
     {
-        return DefineGetter(context, @object, key, GetUtf8ByteCount(key), getter, dontEnum, dontDelete);
+        int count = Encoding.UTF8.GetByteCount(key);
+        if (count <= Utf8StackThreshold)
+        {
+            byte* buf = stackalloc byte[count + 1];
+            Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
+            buf[count] = 0;
+            return DefineGetterCore(context, @object, buf, (nuint)count, getter, dontEnum, dontDelete);
+        }
+        else
+        {
+            byte* buf = (byte*)NativeMemory.Alloc((nuint)count + 1);
+            try
+            {
+                Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
+                buf[count] = 0;
+                return DefineGetterCore(context, @object, buf, (nuint)count, getter, dontEnum, dontDelete);
+            }
+            finally { NativeMemory.Free(buf); }
+        }
     }
 
     public static int DefineSetter(nint context, BunValue @object, string key, nint setter, int dontEnum = 0, int dontDelete = 0)
     {
-        return DefineSetter(context, @object, key, GetUtf8ByteCount(key), setter, dontEnum, dontDelete);
+        int count = Encoding.UTF8.GetByteCount(key);
+        if (count <= Utf8StackThreshold)
+        {
+            byte* buf = stackalloc byte[count + 1];
+            Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
+            buf[count] = 0;
+            return DefineSetterCore(context, @object, buf, (nuint)count, setter, dontEnum, dontDelete);
+        }
+        else
+        {
+            byte* buf = (byte*)NativeMemory.Alloc((nuint)count + 1);
+            try
+            {
+                Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
+                buf[count] = 0;
+                return DefineSetterCore(context, @object, buf, (nuint)count, setter, dontEnum, dontDelete);
+            }
+            finally { NativeMemory.Free(buf); }
+        }
     }
 
     public static int DefineAccessor(nint context, BunValue @object, string key, nint getter, nint setter, int readOnly = 0, int dontEnum = 0, int dontDelete = 0)
     {
-        return DefineAccessor(context, @object, key, GetUtf8ByteCount(key), getter, setter, readOnly, dontEnum, dontDelete);
+        int count = Encoding.UTF8.GetByteCount(key);
+        if (count <= Utf8StackThreshold)
+        {
+            byte* buf = stackalloc byte[count + 1];
+            Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
+            buf[count] = 0;
+            return DefineAccessorCore(context, @object, buf, (nuint)count, getter, setter, readOnly, dontEnum, dontDelete);
+        }
+        else
+        {
+            byte* buf = (byte*)NativeMemory.Alloc((nuint)count + 1);
+            try
+            {
+                Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
+                buf[count] = 0;
+                return DefineAccessorCore(context, @object, buf, (nuint)count, getter, setter, readOnly, dontEnum, dontDelete);
+            }
+            finally { NativeMemory.Free(buf); }
+        }
     }
 
     public static string? CopyUtf8String(nint pointer)
@@ -84,8 +194,8 @@ public static unsafe partial class BunNative
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_int32")]
     public static partial BunValue Int32(int value);
 
-    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_string", StringMarshalling = StringMarshalling.Utf8)]
-    public static partial BunValue String(nint context, string utf8, nuint length);
+    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_string")]
+    private static partial BunValue StringCore(nint context, byte* utf8, nuint length);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_object")]
     public static partial BunValue Object(nint context);
@@ -168,11 +278,11 @@ public static unsafe partial class BunNative
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_to_utf8")]
     public static partial nint ToUtf8(nint context, BunValue value, out nuint length);
 
-    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_set", StringMarshalling = StringMarshalling.Utf8)]
-    public static partial int Set(nint context, BunValue @object, string key, nuint keyLength, BunValue value);
+    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_set")]
+    private static partial int SetCore(nint context, BunValue @object, byte* key, nuint keyLength, BunValue value);
 
-    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_get", StringMarshalling = StringMarshalling.Utf8)]
-    public static partial BunValue Get(nint context, BunValue @object, string key, nuint keyLength);
+    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_get")]
+    private static partial BunValue GetCore(nint context, BunValue @object, byte* key, nuint keyLength);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_set_index")]
     public static partial int SetIndex(nint context, BunValue @object, uint index, BunValue value);
@@ -180,14 +290,14 @@ public static unsafe partial class BunNative
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_get_index")]
     public static partial BunValue GetIndex(nint context, BunValue @object, uint index);
 
-    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_define_getter", StringMarshalling = StringMarshalling.Utf8)]
-    public static partial int DefineGetter(nint context, BunValue @object, string key, nuint keyLength, nint getter, int dontEnum, int dontDelete);
+    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_define_getter")]
+    private static partial int DefineGetterCore(nint context, BunValue @object, byte* key, nuint keyLength, nint getter, int dontEnum, int dontDelete);
 
-    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_define_setter", StringMarshalling = StringMarshalling.Utf8)]
-    public static partial int DefineSetter(nint context, BunValue @object, string key, nuint keyLength, nint setter, int dontEnum, int dontDelete);
+    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_define_setter")]
+    private static partial int DefineSetterCore(nint context, BunValue @object, byte* key, nuint keyLength, nint setter, int dontEnum, int dontDelete);
 
-    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_define_accessor", StringMarshalling = StringMarshalling.Utf8)]
-    public static partial int DefineAccessor(nint context, BunValue @object, string key, nuint keyLength, nint getter, nint setter, int readOnly, int dontEnum, int dontDelete);
+    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_define_accessor")]
+    private static partial int DefineAccessorCore(nint context, BunValue @object, byte* key, nuint keyLength, nint getter, nint setter, int readOnly, int dontEnum, int dontDelete);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_define_finalizer")]
     public static partial int DefineFinalizer(nint context, BunValue @object, nint finalizer, nint userdata);
