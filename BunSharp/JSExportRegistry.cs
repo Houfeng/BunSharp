@@ -1,31 +1,29 @@
+using System.Collections.Concurrent;
+
 namespace BunSharp;
 
 public static class JSExportRegistry
 {
-	private static readonly object SyncRoot = new();
-	private static readonly Dictionary<Type, Func<BunContext, bool>> JsExports = new();
+    // ConcurrentDictionary gives lock-free reads, which matters because
+    // TryExportType is called on the Bun runtime thread while RegisterExport
+    // is called on the registering thread (typically at startup).
+    // [ThreadStatic] is NOT applicable here: this is a global registry whose
+    // entries must be visible across all threads.
+    private static readonly ConcurrentDictionary<Type, Func<BunContext, bool>> JsExports = new();
 
-	public static void RegisterExport(
-		Type exportType,
-		Func<BunContext, bool> register)
-	{
-		ArgumentNullException.ThrowIfNull(exportType);
-		ArgumentNullException.ThrowIfNull(register);
-		lock (SyncRoot)
-		{
-			JsExports[exportType] = register;
-		}
-	}
+    public static void RegisterExport(
+        Type exportType,
+        Func<BunContext, bool> register)
+    {
+        ArgumentNullException.ThrowIfNull(exportType);
+        ArgumentNullException.ThrowIfNull(register);
+        JsExports[exportType] = register;
+    }
 
-	private static bool TryExportType(BunContext context, Type type)
-	{
-		Func<BunContext, bool>? handler;
-		lock (SyncRoot)
-		{
-			JsExports.TryGetValue(type, out handler);
-		}
-		return handler is not null && handler(context);
-	}
+    private static bool TryExportType(BunContext context, Type type)
+    {
+        return JsExports.TryGetValue(type, out var handler) && handler(context);
+    }
 
 	public static void ExportType(this BunContext context, Type type)
 	{
