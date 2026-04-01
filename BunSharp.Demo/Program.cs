@@ -54,11 +54,15 @@ public static class Program
 
       context.ExportType<DemoGreeter>();
 
-      var result = context.EvaluateExpression("1+1");
+      var result = context.Evaluate("1+1");
       var message = context.ToManagedString(result);
       Console.WriteLine(message);
 
-      var exportResult = context.EvaluateExpression(@"(() => {
+      var result2 = context.Evaluate("String(1+1)");
+      var message2 = context.ToManagedString(result2);
+      Console.WriteLine(message2);
+
+      var exportResult = context.Evaluate(@"(() => {
         const greeter = new DemoGreeter('Ada', new Uint8Array([1, 2, 3, 4]));
         return `${greeter.describe()}|${greeter.name}|${greeter.payload.length}|${DemoGreeter.version}`;
       })()");

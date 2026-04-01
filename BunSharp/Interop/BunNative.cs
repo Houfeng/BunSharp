@@ -171,10 +171,10 @@ public static unsafe partial class BunNative
     public static partial nint Context(nint runtime);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_eval_string", StringMarshalling = StringMarshalling.Utf8)]
-    public static partial BunEvalResult EvalString(nint context, string code);
+    public static partial BunValue EvalString(nint context, string code);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_eval_file", StringMarshalling = StringMarshalling.Utf8)]
-    public static partial BunEvalResult EvalFile(nint context, string path);
+    public static partial BunValue EvalFile(nint context, string path);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_run_pending_jobs")]
     public static partial int RunPendingJobs(nint runtime);

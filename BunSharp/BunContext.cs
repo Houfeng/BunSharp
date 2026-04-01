@@ -29,13 +29,15 @@ public unsafe sealed class BunContext
         }
     }
 
-    public void Evaluate(string code)
+    public BunValue Evaluate(string code)
     {
         ArgumentNullException.ThrowIfNull(code);
         VerifyThread();
 
         var result = BunNative.EvalString(Handle, code);
-        ThrowIfEvaluationFailed(result, "bun_eval_string failed.");
+        if (result.IsException)
+            throw new BunException(GetLastError() ?? "bun_eval_string failed.");
+        return result;
     }
 
     public void EvaluateFile(string path)
@@ -44,16 +46,8 @@ public unsafe sealed class BunContext
         VerifyThread();
 
         var result = BunNative.EvalFile(Handle, path);
-        ThrowIfEvaluationFailed(result, "bun_eval_file failed.");
-    }
-
-    public BunValue EvaluateExpression(string code)
-    {
-        var tmpVarName = $"__temp_result_{Guid.NewGuid():N}__";
-        Evaluate($"globalThis.{tmpVarName} = ({code});");
-        var result = GetProperty(GlobalObject, tmpVarName);
-        SetProperty(GlobalObject, tmpVarName, BunValue.Undefined);
-        return result;
+        if (result.IsException)
+            throw new BunException(GetLastError() ?? "bun_eval_file failed.");
     }
 
     public BunValue CreateBoolean(bool value) => BunNative.Bool(value ? 1 : 0);
@@ -431,14 +425,6 @@ public unsafe sealed class BunContext
         }
 
         throw new BunException(GetLastError() ?? "bun_call failed with a JavaScript exception.");
-    }
-
-    private static void ThrowIfEvaluationFailed(BunEvalResult result, string fallbackMessage)
-    {
-        if (result.Success == 0)
-        {
-            throw new BunException(result.ErrorMessage ?? fallbackMessage);
-        }
     }
 
     private BunRuntime GetOwningRuntime()

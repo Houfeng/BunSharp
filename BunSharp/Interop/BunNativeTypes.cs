@@ -62,15 +62,6 @@ public delegate void BunClassStaticSetterFunction(nint ctx, BunValue thisValue, 
 public delegate void BunClassFinalizerFunction(nint nativePtr, nint userdata);
 
 [StructLayout(LayoutKind.Sequential)]
-public struct BunEvalResult
-{
-    public int Success;
-    public nint Error;
-
-    public readonly string? ErrorMessage => Error == 0 ? null : Marshal.PtrToStringUTF8(Error);
-}
-
-[StructLayout(LayoutKind.Sequential)]
 internal struct BunInitializeOptions
 {
     public nint Cwd;
