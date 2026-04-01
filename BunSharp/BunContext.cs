@@ -118,8 +118,11 @@ public unsafe sealed class BunContext
         var handle = BunManagedCallbackRegistry.CreateFinalizer(finalizer, userdata);
         try
         {
-            var value = BunNative.ArrayBuffer(Handle, data, length, BunManagedCallbackRegistry.FinalizerPointer, handle.Pointer);
-            owner.Retain(handle);
+            var disposerHandle = GCHandle.Alloc(handle);
+            var disposerPtr = GCHandle.ToIntPtr(disposerHandle);
+            handle.SetDisposerHandle(disposerPtr);
+            var value = BunNative.ArrayBuffer(Handle, data, length, BunManagedCallbackRegistry.FinalizerPointer, disposerPtr);
+            owner.RetainWithAutoRelease(handle);
             return value;
         }
         catch
@@ -141,8 +144,11 @@ public unsafe sealed class BunContext
         var handle = BunManagedCallbackRegistry.CreateFinalizer(finalizer, userdata);
         try
         {
-            var value = BunNative.TypedArray(Handle, kind, data, elementCount, BunManagedCallbackRegistry.FinalizerPointer, handle.Pointer);
-            owner.Retain(handle);
+            var disposerHandle = GCHandle.Alloc(handle);
+            var disposerPtr = GCHandle.ToIntPtr(disposerHandle);
+            handle.SetDisposerHandle(disposerPtr);
+            var value = BunNative.TypedArray(Handle, kind, data, elementCount, BunManagedCallbackRegistry.FinalizerPointer, disposerPtr);
+            owner.RetainWithAutoRelease(handle);
             return value;
         }
         catch

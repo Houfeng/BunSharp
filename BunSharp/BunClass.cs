@@ -53,13 +53,16 @@ public sealed class BunClass : IDisposable
             {
                 callbackHandle = BunManagedCallbackRegistry.CreateClassFinalizer(finalizer, userdata);
                 finalizerPointer = BunManagedCallbackRegistry.ClassFinalizerPointer;
-                finalizerUserData = callbackHandle.Pointer;
+                var disposerHandle = GCHandle.Alloc(callbackHandle);
+                var disposerPtr = GCHandle.ToIntPtr(disposerHandle);
+                callbackHandle.SetDisposerHandle(disposerPtr);
+                finalizerUserData = disposerPtr;
             }
 
             var value = BunNative.ClassNew(_runtime.Context.Handle, Handle, nativePtr, finalizerPointer, finalizerUserData);
             if (callbackHandle is not null)
             {
-                _runtime.Retain(callbackHandle);
+                _runtime.RetainWithAutoRelease(callbackHandle);
                 callbackHandle = null;
             }
 

@@ -130,8 +130,12 @@ internal static unsafe class BunManagedCallbackRegistry
     {
         try
         {
-            var state = GetState<FinalizerCallbackState>(userdata);
-            state.Callback(state.UserData);
+            if (userdata == 0) return;
+            var outerHandle = GCHandle.FromIntPtr(userdata);
+            if (outerHandle.Target is not BunCallbackHandle callbackHandle) { outerHandle.Free(); return; }
+            var state = GetState<FinalizerCallbackState>(callbackHandle.Pointer);
+            try { state.Callback(state.UserData); } catch { }
+            callbackHandle.Dispose();
         }
         catch
         {
@@ -246,8 +250,12 @@ internal static unsafe class BunManagedCallbackRegistry
     {
         try
         {
-            var state = GetState<ClassFinalizerCallbackState>(userdata);
-            state.Callback(nativePtr, state.UserData);
+            if (userdata == 0) return;
+            var outerHandle = GCHandle.FromIntPtr(userdata);
+            if (outerHandle.Target is not BunCallbackHandle callbackHandle) { outerHandle.Free(); return; }
+            var state = GetState<ClassFinalizerCallbackState>(callbackHandle.Pointer);
+            try { state.Callback(nativePtr, state.UserData); } catch { }
+            callbackHandle.Dispose();
         }
         catch
         {
