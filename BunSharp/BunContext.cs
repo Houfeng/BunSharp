@@ -203,7 +203,7 @@ public unsafe sealed class BunContext
                 return false;
             }
 
-            RetainTargetBoundCallbackHandle(owner, target, handle);
+            RetainTargetBoundGetterHandle(owner, target, key, handle);
             return result;
         }
         catch
@@ -230,7 +230,7 @@ public unsafe sealed class BunContext
                 return false;
             }
 
-            RetainTargetBoundCallbackHandle(owner, target, handle);
+            RetainTargetBoundSetterHandle(owner, target, key, handle);
             return result;
         }
         catch
@@ -243,6 +243,8 @@ public unsafe sealed class BunContext
     public bool DefineAccessor(BunValue target, string key, BunManagedGetter? getter = null, BunManagedSetter? setter = null, bool readOnly = false, bool dontEnum = false, bool dontDelete = false)
     {
         ArgumentNullException.ThrowIfNull(key);
+        if (getter is null && setter is null)
+            return false;
         VerifyThread();
 
         var owner = GetOwningRuntime();
@@ -265,7 +267,7 @@ public unsafe sealed class BunContext
                 return false;
             }
 
-            RetainTargetBoundCallbackHandle(owner, target, handle);
+            RetainTargetBoundAccessorHandle(owner, target, key, getter, setter, handle);
             return result;
         }
         catch
@@ -441,6 +443,42 @@ public unsafe sealed class BunContext
         if (registration is not null)
         {
             registration.AddCallbackHandle(handle);
+            return;
+        }
+
+        owner.Retain(handle);
+    }
+
+    private void RetainTargetBoundGetterHandle(BunRuntime owner, BunValue target, string key, BunCallbackHandle handle)
+    {
+        var registration = owner.GetOrCreateObjectFinalizerRegistration(this, target);
+        if (registration is not null)
+        {
+            registration.ReplaceGetterCallbackHandle(key, handle);
+            return;
+        }
+
+        owner.Retain(handle);
+    }
+
+    private void RetainTargetBoundSetterHandle(BunRuntime owner, BunValue target, string key, BunCallbackHandle handle)
+    {
+        var registration = owner.GetOrCreateObjectFinalizerRegistration(this, target);
+        if (registration is not null)
+        {
+            registration.ReplaceSetterCallbackHandle(key, handle);
+            return;
+        }
+
+        owner.Retain(handle);
+    }
+
+    private void RetainTargetBoundAccessorHandle(BunRuntime owner, BunValue target, string key, BunManagedGetter? getter, BunManagedSetter? setter, BunCallbackHandle handle)
+    {
+        var registration = owner.GetOrCreateObjectFinalizerRegistration(this, target);
+        if (registration is not null)
+        {
+            registration.ReplaceAccessorCallbackHandle(key, getter, setter, handle);
             return;
         }
 

@@ -212,7 +212,8 @@ internal sealed class BunObjectFinalizerRegistration : IDisposable
 {
     private readonly BunRuntime _owner;
     private readonly BunValue _target;
-    private readonly List<BunCallbackHandle> _callbackHandles = [];
+    private readonly HashSet<BunCallbackHandle> _callbackHandles = [];
+    private readonly Dictionary<string, PropertyCallbackRegistration> _propertyCallbacks = new(StringComparer.Ordinal);
     private BunManagedFinalizer? _managedFinalizer;
     private nint _managedFinalizerUserData;
     private bool _hasManagedFinalizer;
@@ -252,6 +253,49 @@ internal sealed class BunObjectFinalizerRegistration : IDisposable
     internal void AddCallbackHandle(BunCallbackHandle handle)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        _callbackHandles.Add(handle);
+    }
+
+    internal void ReplaceGetterCallbackHandle(string key, BunCallbackHandle handle)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        ref var registration = ref GetOrCreatePropertyRegistration(key);
+        ReleaseReplacedGetter(registration);
+        registration.GetterHandle = handle;
+        _callbackHandles.Add(handle);
+    }
+
+    internal void ReplaceSetterCallbackHandle(string key, BunCallbackHandle handle)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        ref var registration = ref GetOrCreatePropertyRegistration(key);
+        ReleaseReplacedSetter(registration);
+        registration.SetterHandle = handle;
+        _callbackHandles.Add(handle);
+    }
+
+    internal void ReplaceAccessorCallbackHandle(string key, BunManagedGetter? getter, BunManagedSetter? setter, BunCallbackHandle handle)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        ref var registration = ref GetOrCreatePropertyRegistration(key);
+        ReleaseFullyReplacedPropertyCallbacks(registration);
+
+        registration.GetterHandle = getter is not null ? handle : null;
+        registration.SetterHandle = setter is not null ? handle : null;
+
+        if (registration.GetterHandle is null && registration.SetterHandle is null)
+        {
+            _propertyCallbacks.Remove(key);
+            handle.Dispose();
+            return;
+        }
+
         _callbackHandles.Add(handle);
     }
 
@@ -297,12 +341,84 @@ internal sealed class BunObjectFinalizerRegistration : IDisposable
             }
         }
 
-        for (var i = _callbackHandles.Count - 1; i >= 0; i--)
-            _callbackHandles[i].Dispose();
+        foreach (var handle in _callbackHandles)
+            handle.Dispose();
 
         _callbackHandles.Clear();
+        _propertyCallbacks.Clear();
         _managedFinalizer = null;
         _managedFinalizerUserData = 0;
         _hasManagedFinalizer = false;
+    }
+
+    private ref PropertyCallbackRegistration GetOrCreatePropertyRegistration(string key)
+    {
+        CollectionsMarshal.GetValueRefOrAddDefault(_propertyCallbacks, key, out var exists);
+        if (!exists)
+            _propertyCallbacks[key] = new PropertyCallbackRegistration();
+
+        return ref CollectionsMarshal.GetValueRefOrNullRef(_propertyCallbacks, key);
+    }
+
+    private void ReleaseReplacedGetter(PropertyCallbackRegistration registration)
+    {
+        var oldGetterHandle = registration.GetterHandle;
+        if (oldGetterHandle is null)
+            return;
+
+        if (ReferenceEquals(oldGetterHandle, registration.SetterHandle))
+        {
+            if (!BunManagedCallbackRegistry.ClearGetterCallback(oldGetterHandle))
+                RemoveAndDisposeCallbackHandle(oldGetterHandle);
+            return;
+        }
+
+        registration.GetterHandle = null;
+        RemoveAndDisposeCallbackHandle(oldGetterHandle);
+    }
+
+    private void ReleaseReplacedSetter(PropertyCallbackRegistration registration)
+    {
+        var oldSetterHandle = registration.SetterHandle;
+        if (oldSetterHandle is null)
+            return;
+
+        if (ReferenceEquals(oldSetterHandle, registration.GetterHandle))
+        {
+            if (!BunManagedCallbackRegistry.ClearSetterCallback(oldSetterHandle))
+                RemoveAndDisposeCallbackHandle(oldSetterHandle);
+            return;
+        }
+
+        registration.SetterHandle = null;
+        RemoveAndDisposeCallbackHandle(oldSetterHandle);
+    }
+
+    private void ReleaseFullyReplacedPropertyCallbacks(PropertyCallbackRegistration registration)
+    {
+        var oldGetterHandle = registration.GetterHandle;
+        var oldSetterHandle = registration.SetterHandle;
+
+        registration.GetterHandle = null;
+        registration.SetterHandle = null;
+
+        if (oldGetterHandle is not null)
+            RemoveAndDisposeCallbackHandle(oldGetterHandle);
+
+        if (oldSetterHandle is not null && !ReferenceEquals(oldSetterHandle, oldGetterHandle))
+            RemoveAndDisposeCallbackHandle(oldSetterHandle);
+    }
+
+    private void RemoveAndDisposeCallbackHandle(BunCallbackHandle handle)
+    {
+        _callbackHandles.Remove(handle);
+        handle.Dispose();
+    }
+
+    private sealed class PropertyCallbackRegistration
+    {
+        public BunCallbackHandle? GetterHandle;
+
+        public BunCallbackHandle? SetterHandle;
     }
 }

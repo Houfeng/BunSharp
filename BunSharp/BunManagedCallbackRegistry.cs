@@ -87,6 +87,26 @@ internal static unsafe class BunManagedCallbackRegistry
         return new BunCallbackHandle(new GetterSetterCallbackState(getter, setter));
     }
 
+    internal static bool ClearGetterCallback(BunCallbackHandle handle)
+    {
+        var state = handle.TryGetState<GetterSetterCallbackState>();
+        if (state is null)
+            return false;
+
+        state.Getter = null;
+        return state.Setter is not null;
+    }
+
+    internal static bool ClearSetterCallback(BunCallbackHandle handle)
+    {
+        var state = handle.TryGetState<GetterSetterCallbackState>();
+        if (state is null)
+            return false;
+
+        state.Setter = null;
+        return state.Getter is not null;
+    }
+
     public static BunCallbackHandle CreateFinalizer(BunManagedFinalizer callback, nint userdata)
     {
         return new BunCallbackHandle(new FinalizerCallbackState(callback, userdata));
@@ -347,7 +367,18 @@ internal static unsafe class BunManagedCallbackRegistry
 
     private sealed record ClassFinalizerCallbackState(BunManagedClassFinalizer Callback, nint UserData);
 
-    private sealed record GetterSetterCallbackState(BunManagedGetter? Getter, BunManagedSetter? Setter);
+    internal sealed class GetterSetterCallbackState
+    {
+        public GetterSetterCallbackState(BunManagedGetter? getter, BunManagedSetter? setter)
+        {
+            Getter = getter;
+            Setter = setter;
+        }
+
+        public BunManagedGetter? Getter { get; set; }
+
+        public BunManagedSetter? Setter { get; set; }
+    }
 }
 
 internal sealed class BunCallbackHandle : IDisposable
@@ -371,6 +402,16 @@ internal sealed class BunCallbackHandle : IDisposable
     }
 
     public nint Pointer { get; }
+
+    internal TState? TryGetState<TState>()
+        where TState : class
+    {
+        var ptr = _handlePtr;
+        if (ptr == 0)
+            return null;
+
+        return GCHandle.FromIntPtr(ptr).Target as TState;
+    }
 
     public void SetDisposerHandle(nint disposerHandlePtr)
     {
