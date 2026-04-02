@@ -366,7 +366,17 @@ public static unsafe partial class BunNative
 
     public static string? CopyUtf8String(nint pointer, nuint length)
     {
-        return pointer == 0 ? null : Marshal.PtrToStringUTF8(pointer, checked((int)length));
+        if (pointer == 0)
+        {
+            return null;
+        }
+
+        if (length == 0)
+        {
+            return string.Empty;
+        }
+
+        return Encoding.UTF8.GetString(new ReadOnlySpan<byte>((void*)pointer, checked((int)length)));
     }
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_initialize")]
