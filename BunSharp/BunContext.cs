@@ -86,11 +86,7 @@ public unsafe sealed class BunContext
         try
         {
             var function = BunNative.Function(Handle, name, BunManagedCallbackRegistry.HostFunctionPointer, handle.Pointer, argCount);
-            var disposerHandle = GCHandle.Alloc(handle);
-            var disposerPtr = GCHandle.ToIntPtr(disposerHandle);
-            handle.SetDisposerHandle(disposerPtr);
-            BunNative.DefineFinalizer(Handle, function, BunManagedCallbackRegistry.CallbackHandleDisposerPointer, disposerPtr);
-            owner.RetainWithAutoRelease(handle);
+            RetainTargetBoundCallbackHandle(owner, function, handle);
             return function;
         }
         catch
@@ -201,7 +197,13 @@ public unsafe sealed class BunContext
         try
         {
             var result = BunNative.DefineGetter(Handle, target, key, BunManagedCallbackRegistry.GetterPointer, handle.Pointer, dontEnum ? 1 : 0, dontDelete ? 1 : 0) != 0;
-            owner.Retain(handle);
+            if (!result)
+            {
+                handle.Dispose();
+                return false;
+            }
+
+            RetainTargetBoundCallbackHandle(owner, target, handle);
             return result;
         }
         catch
@@ -222,7 +224,13 @@ public unsafe sealed class BunContext
         try
         {
             var result = BunNative.DefineSetter(Handle, target, key, BunManagedCallbackRegistry.SetterPointer, handle.Pointer, dontEnum ? 1 : 0, dontDelete ? 1 : 0) != 0;
-            owner.Retain(handle);
+            if (!result)
+            {
+                handle.Dispose();
+                return false;
+            }
+
+            RetainTargetBoundCallbackHandle(owner, target, handle);
             return result;
         }
         catch
@@ -251,7 +259,13 @@ public unsafe sealed class BunContext
                 readOnly ? 1 : 0,
                 dontEnum ? 1 : 0,
                 dontDelete ? 1 : 0) != 0;
-            owner.Retain(handle);
+            if (!result)
+            {
+                handle.Dispose();
+                return false;
+            }
+
+            RetainTargetBoundCallbackHandle(owner, target, handle);
             return result;
         }
         catch
@@ -267,21 +281,11 @@ public unsafe sealed class BunContext
         VerifyThread();
 
         var owner = GetOwningRuntime();
-        var handle = BunManagedCallbackRegistry.CreateFinalizer(finalizer, userdata);
-        try
-        {
-            var disposerHandle = GCHandle.Alloc(handle);
-            var disposerPtr = GCHandle.ToIntPtr(disposerHandle);
-            handle.SetDisposerHandle(disposerPtr);
-            var result = BunNative.DefineFinalizer(Handle, target, BunManagedCallbackRegistry.FinalizerPointer, disposerPtr) != 0;
-            owner.RetainWithAutoRelease(handle);
-            return result;
-        }
-        catch
-        {
-            handle.Dispose();
-            throw;
-        }
+        var registration = owner.GetOrCreateObjectFinalizerRegistration(this, target);
+        if (registration is null)
+            return false;
+
+        return registration.AddManagedFinalizer(finalizer, userdata);
     }
 
     public bool SetPrototype(BunValue target, BunValue prototype)
@@ -329,7 +333,7 @@ public unsafe sealed class BunContext
     public string? ToManagedString(BunValue value)
     {
         VerifyThread();
-        var pointer = BunNative.ToUtf8(Handle, value, out _);
+        var pointer = BunNative.ToUtf8(Handle, value, out var length);
         if (pointer == 0)
         {
             return null;
@@ -337,7 +341,7 @@ public unsafe sealed class BunContext
 
         try
         {
-            return BunNative.CopyUtf8String(pointer);
+            return BunNative.CopyUtf8String(pointer, length);
         }
         finally
         {
@@ -390,7 +394,8 @@ public unsafe sealed class BunContext
     public string? GetLastError()
     {
         VerifyThread();
-        return BunNative.CopyUtf8String(BunNative.LastError(Handle));
+        var pointer = BunNative.LastError(Handle, out var length);
+        return BunNative.CopyUtf8String(pointer, length);
     }
 
     public BunClass RegisterClass(BunClassDefinition definition, BunClass? parent = null)
@@ -428,6 +433,18 @@ public unsafe sealed class BunContext
         }
 
         throw new BunException(GetLastError() ?? "bun_call failed with a JavaScript exception.");
+    }
+
+    private void RetainTargetBoundCallbackHandle(BunRuntime owner, BunValue target, BunCallbackHandle handle)
+    {
+        var registration = owner.GetOrCreateObjectFinalizerRegistration(this, target);
+        if (registration is not null)
+        {
+            registration.AddCallbackHandle(handle);
+            return;
+        }
+
+        owner.Retain(handle);
     }
 
     private BunRuntime GetOwningRuntime()

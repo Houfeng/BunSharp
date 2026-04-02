@@ -164,7 +164,7 @@ public static unsafe partial class BunNative
             byte* buf = stackalloc byte[count + 1];
             Encoding.UTF8.GetBytes(code, new Span<byte>(buf, count));
             buf[count] = 0;
-            return EvalStringCore(context, buf);
+            return EvalStringCore(context, buf, (nuint)count);
         }
         else
         {
@@ -173,7 +173,7 @@ public static unsafe partial class BunNative
             {
                 Encoding.UTF8.GetBytes(code, new Span<byte>(buf, count));
                 buf[count] = 0;
-                return EvalStringCore(context, buf);
+                return EvalStringCore(context, buf, (nuint)count);
             }
             finally { NativeMemory.Free(buf); }
         }
@@ -187,7 +187,7 @@ public static unsafe partial class BunNative
             byte* buf = stackalloc byte[count + 1];
             Encoding.UTF8.GetBytes(path, new Span<byte>(buf, count));
             buf[count] = 0;
-            return EvalFileCore(context, buf);
+            return EvalFileCore(context, buf, (nuint)count);
         }
         else
         {
@@ -196,7 +196,7 @@ public static unsafe partial class BunNative
             {
                 Encoding.UTF8.GetBytes(path, new Span<byte>(buf, count));
                 buf[count] = 0;
-                return EvalFileCore(context, buf);
+                return EvalFileCore(context, buf, (nuint)count);
             }
             finally { NativeMemory.Free(buf); }
         }
@@ -210,7 +210,7 @@ public static unsafe partial class BunNative
             byte* buf = stackalloc byte[count + 1];
             Encoding.UTF8.GetBytes(name, new Span<byte>(buf, count));
             buf[count] = 0;
-            return FunctionCore(context, buf, callback, userdata, argCount);
+            return FunctionCore(context, buf, (nuint)count, callback, userdata, argCount);
         }
         else
         {
@@ -219,7 +219,7 @@ public static unsafe partial class BunNative
             {
                 Encoding.UTF8.GetBytes(name, new Span<byte>(buf, count));
                 buf[count] = 0;
-                return FunctionCore(context, buf, callback, userdata, argCount);
+                return FunctionCore(context, buf, (nuint)count, callback, userdata, argCount);
             }
             finally { NativeMemory.Free(buf); }
         }
@@ -228,6 +228,11 @@ public static unsafe partial class BunNative
     public static string? CopyUtf8String(nint pointer)
     {
         return pointer == 0 ? null : Marshal.PtrToStringUTF8(pointer);
+    }
+
+    public static string? CopyUtf8String(nint pointer, nuint length)
+    {
+        return pointer == 0 ? null : Marshal.PtrToStringUTF8(pointer, checked((int)length));
     }
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_initialize")]
@@ -240,10 +245,10 @@ public static unsafe partial class BunNative
     public static partial nint Context(nint runtime);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_eval_string")]
-    private static partial BunValue EvalStringCore(nint context, byte* code);
+    private static partial BunValue EvalStringCore(nint context, byte* code, nuint codeLength);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_eval_file")]
-    private static partial BunValue EvalFileCore(nint context, byte* path);
+    private static partial BunValue EvalFileCore(nint context, byte* path, nuint pathLength);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_run_pending_jobs")]
     public static partial int RunPendingJobs(nint runtime);
@@ -276,7 +281,7 @@ public static unsafe partial class BunNative
     public static partial BunValue Global(nint context);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_function")]
-    private static partial BunValue FunctionCore(nint context, byte* name, nint callback, nint userdata, int argCount);
+    private static partial BunValue FunctionCore(nint context, byte* name, nuint nameLength, nint callback, nint userdata, int argCount);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_array_buffer")]
     public static partial BunValue ArrayBuffer(nint context, nint data, nuint length, nint finalizer, nint userdata);
@@ -384,7 +389,7 @@ public static unsafe partial class BunNative
     public static partial BunValue Call(nint context, BunValue function, BunValue thisValue, int argc, BunValue* argv);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_last_error")]
-    public static partial nint LastError(nint context);
+    public static partial nint LastError(nint context, out nuint length);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_call_async")]
     public static partial int CallAsync(nint context, BunValue function, BunValue thisValue, int argc, BunValue* argv);

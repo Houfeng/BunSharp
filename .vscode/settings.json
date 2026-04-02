@@ -4,6 +4,7 @@
     "Conv",
     "Convs",
     "Finalizer",
+    "Finalizers",
     "klass",
     "Libbun",
     "netstandard",

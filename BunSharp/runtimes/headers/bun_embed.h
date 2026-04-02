@@ -49,6 +49,8 @@ typedef void (*BunSetterFn)(BunContext* ctx, BunValue this_value, BunValue value
 ///
 /// This runs during GC finalization. It must not call back into Bun/JS APIs.
 /// Use it only to release native resources associated with the object.
+/// Each object may have at most one user finalizer registered via
+/// bun_define_finalizer().
 typedef void (*BunFinalizerFn)(void* userdata);
 
 /// Native instance method callback for bun_class_register().
@@ -204,24 +206,26 @@ BunContext* bun_context(BunRuntime* rt);
 
 /// Evaluate JavaScript/TypeScript source with script semantics.
 ///
-/// @param ctx   JS context.
-/// @param code  UTF-8 source code, null-terminated.
+/// @param ctx       JS context.
+/// @param code      UTF-8 source code bytes.
+/// @param code_len  Length of code in bytes.
 /// @return      The JS completion value on success, or BUN_EXCEPTION (0) if an
-///              error occurred. Call bun_last_error(ctx) to retrieve the error
-///              message after a BUN_EXCEPTION return. The error string is valid
+///              error occurred. Call bun_last_error(ctx, NULL) to retrieve the
+///              error message after a BUN_EXCEPTION return. The error string is valid
 ///              until the next bun_eval*()/bun_call() call on this context.
-BunValue bun_eval_string(BunContext* ctx, const char* code);
+BunValue bun_eval_string(BunContext* ctx, const char* code, size_t code_len);
 
 /// Load and evaluate a JavaScript/TypeScript file as an ES module.
 ///
 /// ES modules do not produce a meaningful completion value, so BUN_UNDEFINED is
 /// returned on success. On failure BUN_EXCEPTION (0) is returned and the error
-/// message is available via bun_last_error(ctx).
+/// message is available via bun_last_error(ctx, NULL).
 ///
-/// @param ctx   JS context.
-/// @param path  UTF-8 file path, null-terminated. Relative paths resolve from cwd.
+/// @param ctx       JS context.
+/// @param path      UTF-8 file path bytes. Relative paths resolve from cwd.
+/// @param path_len  Length of path in bytes.
 /// @return      BUN_UNDEFINED on success, BUN_EXCEPTION (0) on failure.
-BunValue bun_eval_file(BunContext* ctx, const char* path);
+BunValue bun_eval_file(BunContext* ctx, const char* path, size_t path_len);
 
 // --------------------------------------------------------------------------
 // Event Loop Integration
@@ -258,7 +262,7 @@ BunValue bun_string(BunContext* ctx, const char* utf8, size_t len);
 BunValue bun_object(BunContext* ctx);
 BunValue bun_array(BunContext* ctx, size_t len);
 BunValue bun_global(BunContext* ctx);
-BunValue bun_function(BunContext* ctx, const char* name, BunHostFn fn, void* userdata, int arg_count);
+BunValue bun_function(BunContext* ctx, const char* name, size_t name_len, BunHostFn fn, void* userdata, int arg_count);
 
 /// Element type for bun_typed_array().
 typedef enum {
@@ -436,6 +440,12 @@ BunValue bun_get(BunContext* ctx, BunValue object, const char* key, size_t key_l
 int bun_set_index(BunContext* ctx, BunValue object, uint32_t index, BunValue value);
 BunValue bun_get_index(BunContext* ctx, BunValue object, uint32_t index);
 
+/// Define or replace only the getter half of an accessor property.
+///
+/// Getter-only properties are allowed. Repeated calls replace only the getter
+/// callback and getter userdata; any existing setter and setter userdata are
+/// preserved.
+
 int bun_define_getter(
     BunContext* ctx,
     BunValue object,
@@ -446,6 +456,12 @@ int bun_define_getter(
     int dont_enum,
     int dont_delete);
 
+/// Define or replace only the setter half of an accessor property.
+///
+/// Setter-only properties are allowed. If no getter is defined, reads return
+/// `undefined`. Repeated calls replace only the setter callback and setter
+/// userdata; any existing getter and getter userdata are preserved.
+
 int bun_define_setter(
     BunContext* ctx,
     BunValue object,
@@ -455,6 +471,13 @@ int bun_define_setter(
     void* userdata,
     int dont_enum,
     int dont_delete);
+
+/// Define or replace an accessor property.
+///
+/// `getter` and `setter` may be provided independently so long as at least one
+/// callback is non-NULL. The same `userdata` pointer is passed to both sides.
+/// Use bun_define_getter() / bun_define_setter() when getter and setter should
+/// keep separate userdata or be updated independently.
 
 int bun_define_accessor(
     BunContext* ctx,
@@ -468,6 +491,14 @@ int bun_define_accessor(
     int dont_enum,
     int dont_delete);
 
+/// Attach a GC finalizer to a JavaScript object.
+///
+/// Each object may have at most one user finalizer attached through this API.
+/// Repeated calls for the same object return 0 and leave the existing
+/// finalizer unchanged; they do not replace or stack finalizers.
+///
+/// If the underlying attach operation fails, no finalizer is recorded and the
+/// caller may retry.
 int bun_define_finalizer(
     BunContext* ctx,
     BunValue object,
@@ -491,14 +522,18 @@ void* bun_get_opaque(BunContext* ctx, BunValue object);
 /// @param argc       Argument count.
 /// @param argv       Argument array (may be NULL when argc == 0).
 /// @return           The JS return value on success, or BUN_EXCEPTION (0) if a
-///                   JS exception was thrown. Call bun_last_error(ctx) to read
-///                   the exception message after a BUN_EXCEPTION return.
+///                   JS exception was thrown. Call bun_last_error(ctx, NULL) to
+///                   read the exception message after a BUN_EXCEPTION return.
 BunValue bun_call(BunContext* ctx, BunValue fn, BunValue this_value, int argc, const BunValue* argv);
 
 /// Return the error string from the most recent bun_call()/bun_eval*() that
 /// failed on this context. Owned by the runtime; valid until the next
 /// bun_call()/bun_eval*() call. Returns NULL if no error is pending.
-const char* bun_last_error(BunContext* ctx);
+///
+/// @param ctx      JS context.
+/// @param out_len  Optional output for error length in bytes, excluding the
+///                 null terminator. Set to 0 when no error is pending.
+const char* bun_last_error(BunContext* ctx, size_t* out_len);
 
 /// Queue a JavaScript function call to run on the context's owning runtime.
 ///

@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using BunSharp.Interop;
 
 namespace BunSharp;
@@ -5,6 +6,7 @@ namespace BunSharp;
 public sealed class BunRuntime : IDisposable
 {
     private readonly HashSet<IDisposable> _ownedResources = [];
+    private readonly Dictionary<BunValue, BunObjectFinalizerRegistration> _objectFinalizerRegistrations = [];
     private readonly List<Action> _cleanupCallbacks = [];
     private readonly int _threadId;
     private BunContext? _context;
@@ -123,6 +125,14 @@ public sealed class BunRuntime : IDisposable
 
         _cleanupCallbacks.Clear();
 
+        if (_objectFinalizerRegistrations.Count > 0)
+        {
+            var registrations = _objectFinalizerRegistrations.Values.ToArray();
+            _objectFinalizerRegistrations.Clear();
+            for (var i = registrations.Length - 1; i >= 0; i--)
+                registrations[i].Dispose();
+        }
+
         var snapshot = _ownedResources.Count > 0 ? _ownedResources.ToArray() : null;
         _ownedResources.Clear();
         if (snapshot is not null)
@@ -150,6 +160,27 @@ public sealed class BunRuntime : IDisposable
         handle.SetRemoveFromOwner(() => _ownedResources.Remove(handle));
     }
 
+    internal BunObjectFinalizerRegistration? GetOrCreateObjectFinalizerRegistration(BunContext context, BunValue target)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (_objectFinalizerRegistrations.TryGetValue(target, out var registration))
+            return registration;
+
+        registration = BunObjectFinalizerRegistration.Create(this, context, target);
+        if (registration is null)
+            return null;
+
+        _objectFinalizerRegistrations[target] = registration;
+        return registration;
+    }
+
+    internal void RemoveObjectFinalizerRegistration(BunValue target, BunObjectFinalizerRegistration registration)
+    {
+        if (_objectFinalizerRegistrations.TryGetValue(target, out var current) && ReferenceEquals(current, registration))
+            _objectFinalizerRegistrations.Remove(target);
+    }
+
     internal void RegisterCleanup(Action callback)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -174,5 +205,104 @@ public sealed class BunRuntime : IDisposable
             BunDebuggerMode.Break => BunNativeDebuggerMode.Break,
             _ => throw new ArgumentOutOfRangeException(nameof(debuggerMode), debuggerMode, "Unsupported debugger mode."),
         };
+    }
+}
+
+internal sealed class BunObjectFinalizerRegistration : IDisposable
+{
+    private readonly BunRuntime _owner;
+    private readonly BunValue _target;
+    private readonly List<BunCallbackHandle> _callbackHandles = [];
+    private BunManagedFinalizer? _managedFinalizer;
+    private nint _managedFinalizerUserData;
+    private bool _hasManagedFinalizer;
+    private bool _disposed;
+
+    private BunObjectFinalizerRegistration(BunRuntime owner, BunValue target)
+    {
+        _owner = owner;
+        _target = target;
+    }
+
+    internal static BunObjectFinalizerRegistration? Create(BunRuntime owner, BunContext context, BunValue target)
+    {
+        var registration = new BunObjectFinalizerRegistration(owner, target);
+        var handle = BunManagedCallbackRegistry.CreateFinalizer(_ => registration.OnTargetFinalized(), 0);
+        try
+        {
+            var disposerHandle = GCHandle.Alloc(handle);
+            var disposerPtr = GCHandle.ToIntPtr(disposerHandle);
+            handle.SetDisposerHandle(disposerPtr);
+            if (BunNative.DefineFinalizer(context.Handle, target, BunManagedCallbackRegistry.FinalizerPointer, disposerPtr) == 0)
+            {
+                handle.Dispose();
+                return null;
+            }
+
+            owner.RetainWithAutoRelease(handle);
+            return registration;
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
+    }
+
+    internal void AddCallbackHandle(BunCallbackHandle handle)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _callbackHandles.Add(handle);
+    }
+
+    internal bool AddManagedFinalizer(BunManagedFinalizer callback, nint userdata)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (_hasManagedFinalizer)
+            return false;
+
+        _managedFinalizer = callback;
+        _managedFinalizerUserData = userdata;
+        _hasManagedFinalizer = true;
+        return true;
+    }
+
+    internal void OnTargetFinalized()
+    {
+        DisposeCore(runManagedFinalizers: true);
+    }
+
+    public void Dispose()
+    {
+        DisposeCore(runManagedFinalizers: false);
+    }
+
+    private void DisposeCore(bool runManagedFinalizers)
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        _owner.RemoveObjectFinalizerRegistration(_target, this);
+
+        if (runManagedFinalizers && _hasManagedFinalizer)
+        {
+            try
+            {
+                _managedFinalizer!(_managedFinalizerUserData);
+            }
+            catch
+            {
+            }
+        }
+
+        for (var i = _callbackHandles.Count - 1; i >= 0; i--)
+            _callbackHandles[i].Dispose();
+
+        _callbackHandles.Clear();
+        _managedFinalizer = null;
+        _managedFinalizerUserData = 0;
+        _hasManagedFinalizer = false;
     }
 }
