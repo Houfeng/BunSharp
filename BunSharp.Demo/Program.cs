@@ -24,6 +24,35 @@ public sealed class DemoGreeter
   public string Hidden => "hidden";
 }
 
+[JSExport]
+public sealed class BenchmarkBridge
+{
+  public BenchmarkBridge()
+  {
+  }
+
+  public int Counter { get; set; }
+
+  public string Text { get; set; } = string.Empty;
+
+  public byte[] Buffer { get; set; } = [];
+
+  public int add(int left, int right)
+  {
+    return left + right;
+  }
+
+  public string echoString(string value)
+  {
+    return value;
+  }
+
+  public byte[] echoBytes(byte[] value)
+  {
+    return value;
+  }
+}
+
 public static class Program
 {
   public static void Main()
@@ -53,6 +82,7 @@ public static class Program
       }
 
       context.ExportType<DemoGreeter>();
+      context.ExportType<BenchmarkBridge>();
 
       var result = context.Evaluate("1+1");
       var message = context.ToManagedString(result);
@@ -85,6 +115,11 @@ public static class Program
       var tString = context.ToManagedString(tValue);
       Console.WriteLine($"The type of Promise is: {tString}");
 
+      RunBenchmark(context, "属性 set/get", "../../../assets/benchmarks/property-set-get.ts");
+      RunBenchmark(context, "实例方法调用", "../../../assets/benchmarks/instance-method-call.ts");
+      RunBenchmark(context, "字符串往返", "../../../assets/benchmarks/string-roundtrip.ts");
+      RunBenchmark(context, "byte[] 往返", "../../../assets/benchmarks/byte-array-roundtrip.ts");
+
       while (runtime.RunPendingJobs())
       {
         Thread.Sleep(16);
@@ -95,5 +130,26 @@ public static class Program
     {
       Console.Error.WriteLine(ex.Message);
     }
+  }
+
+  private static void RunBenchmark(BunContext context, string name, string relativePath)
+  {
+    var path = Path.GetFullPath(relativePath, AppDomain.CurrentDomain.BaseDirectory);
+    var script = File.ReadAllText(path);
+    var resultValue = context.Evaluate($$"""
+(() => {
+  globalThis.__benchmarkResult = null;
+{{script}}
+  const value = globalThis.__benchmarkResult;
+  return value == null ? null : String(value);
+})()
+""");
+
+    if (context.IsUndefined(resultValue) || context.IsNull(resultValue))
+    {
+      throw new InvalidOperationException($"Benchmark '{name}' did not produce a result.");
+    }
+
+    Console.WriteLine($"[{name}] {context.ToManagedString(resultValue)}");
   }
 }
