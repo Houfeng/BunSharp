@@ -26,7 +26,13 @@ public sealed class BunRuntime : IDisposable
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             VerifyThread();
-            return _context ??= new BunContext(this, BunNative.Context(Handle));
+            if (_context is not null)
+                return _context;
+
+            var contextHandle = BunNative.Context(Handle);
+            BunManagedCallbackRegistry.RegisterContextOwner(contextHandle, this);
+            _context = new BunContext(this, contextHandle);
+            return _context;
         }
     }
 

@@ -6,6 +6,9 @@ namespace BunSharp;
 
 internal static unsafe class BunManagedCallbackRegistry
 {
+    private static readonly object s_contextOwnerSyncRoot = new();
+    private static readonly Dictionary<nint, BunRuntime> s_contextOwners = [];
+
     public static nint HostFunctionPointer => (nint)(delegate* unmanaged[Cdecl]<nint, int, BunValue*, nint, BunValue>)&HostFunctionThunk;
 
     public static nint FinalizerPointer => (nint)(delegate* unmanaged[Cdecl]<nint, void>)&FinalizerThunk;
@@ -49,11 +52,31 @@ internal static unsafe class BunManagedCallbackRegistry
             return t_cachedContext;
 
         // Slow path: first call on this thread, or a different context handle.
-        // BunContext is a lightweight unmanaged-handle wrapper, so constructing one is cheap.
-        var ctx = new BunContext(handle);
+        // Resolve the owning runtime when available so callback-created contexts can retain managed resources.
+        var ctx = TryGetContextOwner(handle, out var owner)
+            ? new BunContext(owner, handle)
+            : new BunContext(handle);
         t_cachedContextHandle = handle;
         t_cachedContext = ctx;
         return ctx;
+    }
+
+    internal static void RegisterContextOwner(nint handle, BunRuntime owner)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+
+        lock (s_contextOwnerSyncRoot)
+        {
+            s_contextOwners[handle] = owner;
+        }
+    }
+
+    private static bool TryGetContextOwner(nint handle, out BunRuntime owner)
+    {
+        lock (s_contextOwnerSyncRoot)
+        {
+            return s_contextOwners.TryGetValue(handle, out owner!);
+        }
     }
 
     internal static void removeContextCache(nint handle)
@@ -64,6 +87,11 @@ internal static unsafe class BunManagedCallbackRegistry
         {
             t_cachedContextHandle = 0;
             t_cachedContext = null;
+        }
+
+        lock (s_contextOwnerSyncRoot)
+        {
+            s_contextOwners.Remove(handle);
         }
     }
 
