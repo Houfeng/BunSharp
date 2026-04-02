@@ -20,6 +20,8 @@ public unsafe sealed class BunContext
 
     public nint Handle { get; }
 
+    public bool CanRetainManagedResources => _runtime is not null;
+
     public BunValue GlobalObject
     {
         get

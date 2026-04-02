@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -17,212 +18,345 @@ public static unsafe partial class BunNative
     }
 
     private const int Utf8StackThreshold = 256;
+    private const int Utf8SinglePassThreshold = 1024;
+
+    private static int GetUtf8SinglePassByteCapacity(string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return checked(value.Length * 3);
+    }
 
     public static BunValue CreateString(nint context, string value)
     {
-        int count = Encoding.UTF8.GetByteCount(value);
-        if (count <= Utf8StackThreshold)
+        int maxCount = GetUtf8SinglePassByteCapacity(value);
+        if (maxCount <= Utf8StackThreshold)
         {
-            byte* buf = stackalloc byte[count + 1];
-            Encoding.UTF8.GetBytes(value, new Span<byte>(buf, count));
+            byte* buf = stackalloc byte[maxCount + 1];
+            int count = Encoding.UTF8.GetBytes(value, new Span<byte>(buf, maxCount));
             buf[count] = 0;
             return StringCore(context, buf, (nuint)count);
         }
-        else
+
+        if (maxCount <= Utf8SinglePassThreshold)
         {
-            byte* buf = (byte*)NativeMemory.Alloc((nuint)count + 1);
+            var rented = ArrayPool<byte>.Shared.Rent(maxCount + 1);
             try
             {
-                Encoding.UTF8.GetBytes(value, new Span<byte>(buf, count));
-                buf[count] = 0;
-                return StringCore(context, buf, (nuint)count);
+                int count = Encoding.UTF8.GetBytes(value, rented.AsSpan(0, maxCount));
+                rented[count] = 0;
+                fixed (byte* buf = rented)
+                {
+                    return StringCore(context, buf, (nuint)count);
+                }
             }
-            finally { NativeMemory.Free(buf); }
+            finally { ArrayPool<byte>.Shared.Return(rented); }
         }
+
+        int exactCount = Encoding.UTF8.GetByteCount(value);
+        byte* exactBuf = (byte*)NativeMemory.Alloc((nuint)exactCount + 1);
+        try
+        {
+            Encoding.UTF8.GetBytes(value, new Span<byte>(exactBuf, exactCount));
+            exactBuf[exactCount] = 0;
+            return StringCore(context, exactBuf, (nuint)exactCount);
+        }
+        finally { NativeMemory.Free(exactBuf); }
     }
 
     public static int Set(nint context, BunValue @object, string key, BunValue value)
     {
-        int count = Encoding.UTF8.GetByteCount(key);
-        if (count <= Utf8StackThreshold)
+        int maxCount = GetUtf8SinglePassByteCapacity(key);
+        if (maxCount <= Utf8StackThreshold)
         {
-            byte* buf = stackalloc byte[count + 1];
-            Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
+            byte* buf = stackalloc byte[maxCount + 1];
+            int count = Encoding.UTF8.GetBytes(key, new Span<byte>(buf, maxCount));
             buf[count] = 0;
             return SetCore(context, @object, buf, (nuint)count, value);
         }
-        else
+
+        if (maxCount <= Utf8SinglePassThreshold)
         {
-            byte* buf = (byte*)NativeMemory.Alloc((nuint)count + 1);
+            var rented = ArrayPool<byte>.Shared.Rent(maxCount + 1);
             try
             {
-                Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
-                buf[count] = 0;
-                return SetCore(context, @object, buf, (nuint)count, value);
+                int count = Encoding.UTF8.GetBytes(key, rented.AsSpan(0, maxCount));
+                rented[count] = 0;
+                fixed (byte* buf = rented)
+                {
+                    return SetCore(context, @object, buf, (nuint)count, value);
+                }
             }
-            finally { NativeMemory.Free(buf); }
+            finally { ArrayPool<byte>.Shared.Return(rented); }
         }
+
+        int exactCount = Encoding.UTF8.GetByteCount(key);
+        byte* exactBuf = (byte*)NativeMemory.Alloc((nuint)exactCount + 1);
+        try
+        {
+            Encoding.UTF8.GetBytes(key, new Span<byte>(exactBuf, exactCount));
+            exactBuf[exactCount] = 0;
+            return SetCore(context, @object, exactBuf, (nuint)exactCount, value);
+        }
+        finally { NativeMemory.Free(exactBuf); }
     }
 
     public static BunValue Get(nint context, BunValue @object, string key)
     {
-        int count = Encoding.UTF8.GetByteCount(key);
-        if (count <= Utf8StackThreshold)
+        int maxCount = GetUtf8SinglePassByteCapacity(key);
+        if (maxCount <= Utf8StackThreshold)
         {
-            byte* buf = stackalloc byte[count + 1];
-            Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
+            byte* buf = stackalloc byte[maxCount + 1];
+            int count = Encoding.UTF8.GetBytes(key, new Span<byte>(buf, maxCount));
             buf[count] = 0;
             return GetCore(context, @object, buf, (nuint)count);
         }
-        else
+
+        if (maxCount <= Utf8SinglePassThreshold)
         {
-            byte* buf = (byte*)NativeMemory.Alloc((nuint)count + 1);
+            var rented = ArrayPool<byte>.Shared.Rent(maxCount + 1);
             try
             {
-                Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
-                buf[count] = 0;
-                return GetCore(context, @object, buf, (nuint)count);
+                int count = Encoding.UTF8.GetBytes(key, rented.AsSpan(0, maxCount));
+                rented[count] = 0;
+                fixed (byte* buf = rented)
+                {
+                    return GetCore(context, @object, buf, (nuint)count);
+                }
             }
-            finally { NativeMemory.Free(buf); }
+            finally { ArrayPool<byte>.Shared.Return(rented); }
         }
+
+        int exactCount = Encoding.UTF8.GetByteCount(key);
+        byte* exactBuf = (byte*)NativeMemory.Alloc((nuint)exactCount + 1);
+        try
+        {
+            Encoding.UTF8.GetBytes(key, new Span<byte>(exactBuf, exactCount));
+            exactBuf[exactCount] = 0;
+            return GetCore(context, @object, exactBuf, (nuint)exactCount);
+        }
+        finally { NativeMemory.Free(exactBuf); }
     }
 
     public static int DefineGetter(nint context, BunValue @object, string key, nint getter, nint userdata, int dontEnum = 0, int dontDelete = 0)
     {
-        int count = Encoding.UTF8.GetByteCount(key);
-        if (count <= Utf8StackThreshold)
+        int maxCount = GetUtf8SinglePassByteCapacity(key);
+        if (maxCount <= Utf8StackThreshold)
         {
-            byte* buf = stackalloc byte[count + 1];
-            Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
+            byte* buf = stackalloc byte[maxCount + 1];
+            int count = Encoding.UTF8.GetBytes(key, new Span<byte>(buf, maxCount));
             buf[count] = 0;
             return DefineGetterCore(context, @object, buf, (nuint)count, getter, userdata, dontEnum, dontDelete);
         }
-        else
+
+        if (maxCount <= Utf8SinglePassThreshold)
         {
-            byte* buf = (byte*)NativeMemory.Alloc((nuint)count + 1);
+            var rented = ArrayPool<byte>.Shared.Rent(maxCount + 1);
             try
             {
-                Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
-                buf[count] = 0;
-                return DefineGetterCore(context, @object, buf, (nuint)count, getter, userdata, dontEnum, dontDelete);
+                int count = Encoding.UTF8.GetBytes(key, rented.AsSpan(0, maxCount));
+                rented[count] = 0;
+                fixed (byte* buf = rented)
+                {
+                    return DefineGetterCore(context, @object, buf, (nuint)count, getter, userdata, dontEnum, dontDelete);
+                }
             }
-            finally { NativeMemory.Free(buf); }
+            finally { ArrayPool<byte>.Shared.Return(rented); }
         }
+
+        int exactCount = Encoding.UTF8.GetByteCount(key);
+        byte* exactBuf = (byte*)NativeMemory.Alloc((nuint)exactCount + 1);
+        try
+        {
+            Encoding.UTF8.GetBytes(key, new Span<byte>(exactBuf, exactCount));
+            exactBuf[exactCount] = 0;
+            return DefineGetterCore(context, @object, exactBuf, (nuint)exactCount, getter, userdata, dontEnum, dontDelete);
+        }
+        finally { NativeMemory.Free(exactBuf); }
     }
 
     public static int DefineSetter(nint context, BunValue @object, string key, nint setter, nint userdata, int dontEnum = 0, int dontDelete = 0)
     {
-        int count = Encoding.UTF8.GetByteCount(key);
-        if (count <= Utf8StackThreshold)
+        int maxCount = GetUtf8SinglePassByteCapacity(key);
+        if (maxCount <= Utf8StackThreshold)
         {
-            byte* buf = stackalloc byte[count + 1];
-            Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
+            byte* buf = stackalloc byte[maxCount + 1];
+            int count = Encoding.UTF8.GetBytes(key, new Span<byte>(buf, maxCount));
             buf[count] = 0;
             return DefineSetterCore(context, @object, buf, (nuint)count, setter, userdata, dontEnum, dontDelete);
         }
-        else
+
+        if (maxCount <= Utf8SinglePassThreshold)
         {
-            byte* buf = (byte*)NativeMemory.Alloc((nuint)count + 1);
+            var rented = ArrayPool<byte>.Shared.Rent(maxCount + 1);
             try
             {
-                Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
-                buf[count] = 0;
-                return DefineSetterCore(context, @object, buf, (nuint)count, setter, userdata, dontEnum, dontDelete);
+                int count = Encoding.UTF8.GetBytes(key, rented.AsSpan(0, maxCount));
+                rented[count] = 0;
+                fixed (byte* buf = rented)
+                {
+                    return DefineSetterCore(context, @object, buf, (nuint)count, setter, userdata, dontEnum, dontDelete);
+                }
             }
-            finally { NativeMemory.Free(buf); }
+            finally { ArrayPool<byte>.Shared.Return(rented); }
         }
+
+        int exactCount = Encoding.UTF8.GetByteCount(key);
+        byte* exactBuf = (byte*)NativeMemory.Alloc((nuint)exactCount + 1);
+        try
+        {
+            Encoding.UTF8.GetBytes(key, new Span<byte>(exactBuf, exactCount));
+            exactBuf[exactCount] = 0;
+            return DefineSetterCore(context, @object, exactBuf, (nuint)exactCount, setter, userdata, dontEnum, dontDelete);
+        }
+        finally { NativeMemory.Free(exactBuf); }
     }
 
     public static int DefineAccessor(nint context, BunValue @object, string key, nint getter, nint setter, nint userdata, int readOnly = 0, int dontEnum = 0, int dontDelete = 0)
     {
-        int count = Encoding.UTF8.GetByteCount(key);
-        if (count <= Utf8StackThreshold)
+        int maxCount = GetUtf8SinglePassByteCapacity(key);
+        if (maxCount <= Utf8StackThreshold)
         {
-            byte* buf = stackalloc byte[count + 1];
-            Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
+            byte* buf = stackalloc byte[maxCount + 1];
+            int count = Encoding.UTF8.GetBytes(key, new Span<byte>(buf, maxCount));
             buf[count] = 0;
             return DefineAccessorCore(context, @object, buf, (nuint)count, getter, setter, userdata, readOnly, dontEnum, dontDelete);
         }
-        else
+
+        if (maxCount <= Utf8SinglePassThreshold)
         {
-            byte* buf = (byte*)NativeMemory.Alloc((nuint)count + 1);
+            var rented = ArrayPool<byte>.Shared.Rent(maxCount + 1);
             try
             {
-                Encoding.UTF8.GetBytes(key, new Span<byte>(buf, count));
-                buf[count] = 0;
-                return DefineAccessorCore(context, @object, buf, (nuint)count, getter, setter, userdata, readOnly, dontEnum, dontDelete);
+                int count = Encoding.UTF8.GetBytes(key, rented.AsSpan(0, maxCount));
+                rented[count] = 0;
+                fixed (byte* buf = rented)
+                {
+                    return DefineAccessorCore(context, @object, buf, (nuint)count, getter, setter, userdata, readOnly, dontEnum, dontDelete);
+                }
             }
-            finally { NativeMemory.Free(buf); }
+            finally { ArrayPool<byte>.Shared.Return(rented); }
         }
+
+        int exactCount = Encoding.UTF8.GetByteCount(key);
+        byte* exactBuf = (byte*)NativeMemory.Alloc((nuint)exactCount + 1);
+        try
+        {
+            Encoding.UTF8.GetBytes(key, new Span<byte>(exactBuf, exactCount));
+            exactBuf[exactCount] = 0;
+            return DefineAccessorCore(context, @object, exactBuf, (nuint)exactCount, getter, setter, userdata, readOnly, dontEnum, dontDelete);
+        }
+        finally { NativeMemory.Free(exactBuf); }
     }
 
     public static BunValue EvalString(nint context, string code)
     {
-        int count = Encoding.UTF8.GetByteCount(code);
-        if (count <= Utf8StackThreshold)
+        int maxCount = GetUtf8SinglePassByteCapacity(code);
+        if (maxCount <= Utf8StackThreshold)
         {
-            byte* buf = stackalloc byte[count + 1];
-            Encoding.UTF8.GetBytes(code, new Span<byte>(buf, count));
+            byte* buf = stackalloc byte[maxCount + 1];
+            int count = Encoding.UTF8.GetBytes(code, new Span<byte>(buf, maxCount));
             buf[count] = 0;
             return EvalStringCore(context, buf, (nuint)count);
         }
-        else
+
+        if (maxCount <= Utf8SinglePassThreshold)
         {
-            byte* buf = (byte*)NativeMemory.Alloc((nuint)count + 1);
+            var rented = ArrayPool<byte>.Shared.Rent(maxCount + 1);
             try
             {
-                Encoding.UTF8.GetBytes(code, new Span<byte>(buf, count));
-                buf[count] = 0;
-                return EvalStringCore(context, buf, (nuint)count);
+                int count = Encoding.UTF8.GetBytes(code, rented.AsSpan(0, maxCount));
+                rented[count] = 0;
+                fixed (byte* buf = rented)
+                {
+                    return EvalStringCore(context, buf, (nuint)count);
+                }
             }
-            finally { NativeMemory.Free(buf); }
+            finally { ArrayPool<byte>.Shared.Return(rented); }
         }
+
+        int exactCount = Encoding.UTF8.GetByteCount(code);
+        byte* exactBuf = (byte*)NativeMemory.Alloc((nuint)exactCount + 1);
+        try
+        {
+            Encoding.UTF8.GetBytes(code, new Span<byte>(exactBuf, exactCount));
+            exactBuf[exactCount] = 0;
+            return EvalStringCore(context, exactBuf, (nuint)exactCount);
+        }
+        finally { NativeMemory.Free(exactBuf); }
     }
 
     public static BunValue EvalFile(nint context, string path)
     {
-        int count = Encoding.UTF8.GetByteCount(path);
-        if (count <= Utf8StackThreshold)
+        int maxCount = GetUtf8SinglePassByteCapacity(path);
+        if (maxCount <= Utf8StackThreshold)
         {
-            byte* buf = stackalloc byte[count + 1];
-            Encoding.UTF8.GetBytes(path, new Span<byte>(buf, count));
+            byte* buf = stackalloc byte[maxCount + 1];
+            int count = Encoding.UTF8.GetBytes(path, new Span<byte>(buf, maxCount));
             buf[count] = 0;
             return EvalFileCore(context, buf, (nuint)count);
         }
-        else
+
+        if (maxCount <= Utf8SinglePassThreshold)
         {
-            byte* buf = (byte*)NativeMemory.Alloc((nuint)count + 1);
+            var rented = ArrayPool<byte>.Shared.Rent(maxCount + 1);
             try
             {
-                Encoding.UTF8.GetBytes(path, new Span<byte>(buf, count));
-                buf[count] = 0;
-                return EvalFileCore(context, buf, (nuint)count);
+                int count = Encoding.UTF8.GetBytes(path, rented.AsSpan(0, maxCount));
+                rented[count] = 0;
+                fixed (byte* buf = rented)
+                {
+                    return EvalFileCore(context, buf, (nuint)count);
+                }
             }
-            finally { NativeMemory.Free(buf); }
+            finally { ArrayPool<byte>.Shared.Return(rented); }
         }
+
+        int exactCount = Encoding.UTF8.GetByteCount(path);
+        byte* exactBuf = (byte*)NativeMemory.Alloc((nuint)exactCount + 1);
+        try
+        {
+            Encoding.UTF8.GetBytes(path, new Span<byte>(exactBuf, exactCount));
+            exactBuf[exactCount] = 0;
+            return EvalFileCore(context, exactBuf, (nuint)exactCount);
+        }
+        finally { NativeMemory.Free(exactBuf); }
     }
 
     public static BunValue Function(nint context, string name, nint callback, nint userdata, int argCount)
     {
-        int count = Encoding.UTF8.GetByteCount(name);
-        if (count <= Utf8StackThreshold)
+        int maxCount = GetUtf8SinglePassByteCapacity(name);
+        if (maxCount <= Utf8StackThreshold)
         {
-            byte* buf = stackalloc byte[count + 1];
-            Encoding.UTF8.GetBytes(name, new Span<byte>(buf, count));
+            byte* buf = stackalloc byte[maxCount + 1];
+            int count = Encoding.UTF8.GetBytes(name, new Span<byte>(buf, maxCount));
             buf[count] = 0;
             return FunctionCore(context, buf, (nuint)count, callback, userdata, argCount);
         }
-        else
+
+        if (maxCount <= Utf8SinglePassThreshold)
         {
-            byte* buf = (byte*)NativeMemory.Alloc((nuint)count + 1);
+            var rented = ArrayPool<byte>.Shared.Rent(maxCount + 1);
             try
             {
-                Encoding.UTF8.GetBytes(name, new Span<byte>(buf, count));
-                buf[count] = 0;
-                return FunctionCore(context, buf, (nuint)count, callback, userdata, argCount);
+                int count = Encoding.UTF8.GetBytes(name, rented.AsSpan(0, maxCount));
+                rented[count] = 0;
+                fixed (byte* buf = rented)
+                {
+                    return FunctionCore(context, buf, (nuint)count, callback, userdata, argCount);
+                }
             }
-            finally { NativeMemory.Free(buf); }
+            finally { ArrayPool<byte>.Shared.Return(rented); }
         }
+
+        int exactCount = Encoding.UTF8.GetByteCount(name);
+        byte* exactBuf = (byte*)NativeMemory.Alloc((nuint)exactCount + 1);
+        try
+        {
+            Encoding.UTF8.GetBytes(name, new Span<byte>(exactBuf, exactCount));
+            exactBuf[exactCount] = 0;
+            return FunctionCore(context, exactBuf, (nuint)exactCount, callback, userdata, argCount);
+        }
+        finally { NativeMemory.Free(exactBuf); }
     }
 
     public static string? CopyUtf8String(nint pointer)
