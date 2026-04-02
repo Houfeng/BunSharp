@@ -723,15 +723,18 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("    {");
         builder.AppendLine("        private readonly HashSet<nint> _trackedHandles = new();");
         builder.AppendLine();
-        builder.AppendLine("        public RegistrationState(global::BunSharp.BunClass @class, global::BunSharp.BunValue constructor)");
+        builder.AppendLine("        public RegistrationState(global::BunSharp.BunClass @class, global::BunSharp.BunValue constructor, global::BunSharp.BunClassPersistentFinalizer releaseHandleFinalizer)");
         builder.AppendLine("        {");
         builder.AppendLine("            Class = @class;");
         builder.AppendLine("            Constructor = constructor;");
+        builder.AppendLine("            ReleaseHandleFinalizer = releaseHandleFinalizer;");
         builder.AppendLine("        }");
         builder.AppendLine();
         builder.AppendLine("        public global::BunSharp.BunClass Class { get; }");
         builder.AppendLine();
         builder.AppendLine("        public global::BunSharp.BunValue Constructor { get; }");
+        builder.AppendLine();
+        builder.AppendLine("        public global::BunSharp.BunClassPersistentFinalizer ReleaseHandleFinalizer { get; }");
         builder.AppendLine();
         builder.AppendLine("        public void TrackHandle(nint handle)");
         builder.AppendLine("        {");
@@ -753,6 +756,11 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("                }");
         builder.AppendLine("                _trackedHandles.Clear();");
         builder.AppendLine("            }");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        public void DisposeReleaseHandleFinalizer()");
+        builder.AppendLine("        {");
+        builder.AppendLine("            ReleaseHandleFinalizer.Dispose();");
         builder.AppendLine("        }");
         builder.AppendLine("    }");
         builder.AppendLine();
@@ -878,7 +886,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine(");");
         builder.AppendLine("            }");
         builder.AppendLine();
-        builder.AppendLine("            var registration = new RegistrationState(@class, constructor);");
+        builder.AppendLine("            var releaseHandleFinalizer = @class.CreatePersistentFinalizer(ReleaseHandle, contextHandle);");
+        builder.AppendLine("            var registration = new RegistrationState(@class, constructor, releaseHandleFinalizer);");
         builder.AppendLine("            Registrations.Add(contextHandle, registration);");
         builder.AppendLine("            context.RegisterCleanup(() =>");
         builder.AppendLine("            {");
@@ -887,6 +896,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("                    if (Registrations.Remove(contextHandle, out var removed))");
         builder.AppendLine("                    {");
         builder.AppendLine("                        removed.ReleaseTrackedHandles();");
+        builder.AppendLine("                        removed.DisposeReleaseHandleFinalizer();");
         builder.AppendLine("                    }");
         builder.AppendLine("                }");
         builder.AppendLine();
@@ -945,7 +955,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        var handlePtr = GCHandle.ToIntPtr(handle);");
         builder.AppendLine("        try");
         builder.AppendLine("        {");
-        builder.AppendLine("            var value = registration.Class.CreateInstance(handlePtr, ReleaseHandle, context.Handle);");
+        builder.AppendLine("            var value = registration.Class.CreateInstance(handlePtr, registration.ReleaseHandleFinalizer);");
         builder.AppendLine("            registration.TrackHandle(handlePtr);");
         builder.AppendLine("            return value;");
         builder.AppendLine("        }");

@@ -74,6 +74,29 @@ public sealed class BunClass : IDisposable
         }
     }
 
+    public BunValue CreateInstance(nint nativePtr, nint finalizer, nint userdata = 0)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _runtime.VerifyThread();
+        return BunNative.ClassNew(_runtime.Context.Handle, Handle, nativePtr, finalizer, userdata);
+    }
+
+    public BunClassPersistentFinalizer CreatePersistentFinalizer(BunManagedClassFinalizer finalizer, nint userdata = 0)
+    {
+        ArgumentNullException.ThrowIfNull(finalizer);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _runtime.VerifyThread();
+        return new BunClassPersistentFinalizer(BunManagedCallbackRegistry.CreatePersistentClassFinalizer(finalizer, userdata));
+    }
+
+    public BunValue CreateInstance(nint nativePtr, BunClassPersistentFinalizer finalizer)
+    {
+        ArgumentNullException.ThrowIfNull(finalizer);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _runtime.VerifyThread();
+        return BunNative.ClassNew(_runtime.Context.Handle, Handle, nativePtr, BunManagedCallbackRegistry.PersistentClassFinalizerPointer, finalizer.UserData);
+    }
+
     public nint Unwrap(BunValue value)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -104,6 +127,23 @@ public sealed class BunClass : IDisposable
 
         _preparedDescriptor.Dispose();
         _disposed = true;
+    }
+}
+
+public sealed class BunClassPersistentFinalizer : IDisposable
+{
+    private BunCallbackHandle? _callbackHandle;
+
+    internal BunClassPersistentFinalizer(BunCallbackHandle callbackHandle)
+    {
+        _callbackHandle = callbackHandle;
+    }
+
+    internal nint UserData => _callbackHandle?.Pointer ?? 0;
+
+    public void Dispose()
+    {
+        Interlocked.Exchange(ref _callbackHandle, null)?.Dispose();
     }
 }
 

@@ -29,6 +29,8 @@ internal static unsafe class BunManagedCallbackRegistry
 
     public static nint ClassFinalizerPointer => (nint)(delegate* unmanaged[Cdecl]<nint, nint, void>)&ClassFinalizerThunk;
 
+    public static nint PersistentClassFinalizerPointer => (nint)(delegate* unmanaged[Cdecl]<nint, nint, void>)&PersistentClassFinalizerThunk;
+
     public static nint CallbackHandleDisposerPointer => (nint)(delegate* unmanaged[Cdecl]<nint, void>)&CallbackHandleDisposerThunk;
 
     public static nint GetterPointer => (nint)(delegate* unmanaged[Cdecl]<nint, BunValue, nint, BunValue>)&GetterThunk;
@@ -166,6 +168,11 @@ internal static unsafe class BunManagedCallbackRegistry
     }
 
     public static BunCallbackHandle CreateClassFinalizer(BunManagedClassFinalizer callback, nint userdata)
+    {
+        return new BunCallbackHandle(new ClassFinalizerCallbackState(callback, userdata));
+    }
+
+    public static BunCallbackHandle CreatePersistentClassFinalizer(BunManagedClassFinalizer callback, nint userdata)
     {
         return new BunCallbackHandle(new ClassFinalizerCallbackState(callback, userdata));
     }
@@ -316,6 +323,20 @@ internal static unsafe class BunManagedCallbackRegistry
             var state = GetState<ClassFinalizerCallbackState>(callbackHandle.Pointer);
             try { state.Callback(nativePtr, state.UserData); } catch { }
             callbackHandle.Dispose();
+        }
+        catch
+        {
+        }
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void PersistentClassFinalizerThunk(nint nativePtr, nint userdata)
+    {
+        try
+        {
+            if (userdata == 0) return;
+            var state = GetState<ClassFinalizerCallbackState>(userdata);
+            try { state.Callback(nativePtr, state.UserData); } catch { }
         }
         catch
         {
