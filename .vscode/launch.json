@@ -3,33 +3,55 @@
   // 悬停以查看现有属性的描述。
   // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
   "version": "0.2.0",
+  "compounds": [
+    {
+      "name": "Debug BunSharp.Demo + Attach Bun",
+      "configurations": [
+        "Debug BunSharp.Demo Host",
+        "Attach Bun (BunSharp.Demo)"
+      ],
+      "stopAll": true
+    }
+  ],
   "configurations": [
     {
-      "type": "bun",
-      "internalConsoleOptions": "neverOpen",
+      "type": "coreclr",
       "request": "launch",
-      "name": "Debug File",
-      "program": "${workspaceFolder}/BunSharp.Demo/assets/debug.ts",
+      "name": "Debug BunSharp.Demo Host",
+      "preLaunchTask": "build BunSharp.Demo",
+      "program": "${workspaceFolder}/BunSharp.Demo/bin/Debug/net10.0/BunSharp.Demo.dll",
       "cwd": "${workspaceFolder}",
-      "stopOnEntry": false,
-      "watchMode": false
+      "args": [
+        "BunSharp.Demo/assets/debug.ts"
+      ],
+      "env": {
+        "BUNSHARP_DEMO_DEBUG_MODE": "Break",
+        "BUNSHARP_DEMO_DEBUG_URL": "tcp://127.0.0.1:6499"
+      },
+      "console": "integratedTerminal",
+      "stopAtEntry": false
     },
     {
-      "type": "bun",
-      "internalConsoleOptions": "neverOpen",
+      "type": "coreclr",
       "request": "launch",
-      "name": "Run File",
-      "program": "${workspaceFolder}/BunSharp.Demo/assets/debug.ts",
+      "name": "Launch BunSharp.Demo Script",
+      "preLaunchTask": "build BunSharp.Demo",
+      "program": "${workspaceFolder}/BunSharp.Demo/bin/Debug/net10.0/BunSharp.Demo.dll",
       "cwd": "${workspaceFolder}",
-      "noDebug": true,
-      "watchMode": false
+      "args": [
+        "BunSharp.Demo/assets/debug.ts"
+      ],
+      "env": {
+        "BUNSHARP_DEMO_DEBUG_MODE": "Off"
+      },
+      "console": "integratedTerminal"
     },
     {
       "type": "bun",
       "internalConsoleOptions": "neverOpen",
       "request": "attach",
-      "name": "Attach Bun",
-      "url": "ws://localhost:6499/",
+      "name": "Attach Bun (BunSharp.Demo)",
+      "url": "ws://127.0.0.1:6499/",
       "stopOnEntry": false
     }
   ]
