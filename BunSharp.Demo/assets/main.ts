@@ -10,3 +10,8 @@ for (let i = 0; i <= 1000000; i++) {
   t += i;
 }
 console.timeEnd('loop2');
+
+// @ts-ignore
+const greeter = new DemoGreeter("Debugger", new Uint8Array([1, 2, 3, 4]));
+// @ts-ignore
+console.log("greeter:", greeter.describe(), greeter.name, DemoGreeter.version);
