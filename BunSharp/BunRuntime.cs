@@ -71,6 +71,7 @@ public sealed class BunRuntime : IDisposable
             debuggerListenUrl = Utf8NativeString.Allocate(options.DebuggerListenUrl);
         }
 
+        BunRuntime? runtime = null;
         try
         {
             unsafe
@@ -88,13 +89,34 @@ public sealed class BunRuntime : IDisposable
                     throw new BunException("bun_initialize returned a null runtime.");
                 }
 
-                return new BunRuntime(handle);
+                runtime = new BunRuntime(handle);
+                return runtime;
             }
         }
         finally
         {
-            debuggerListenUrl?.Dispose();
-            cwd?.Dispose();
+            if (runtime is not null)
+            {
+                // Initialization succeeded: libbun retains the pointer asynchronously
+                // (e.g., deferred WebSocket inspector setup). Transfer ownership to the
+                // runtime so the native strings live until the runtime is disposed.
+                if (debuggerListenUrl.HasValue)
+                {
+                    var url = debuggerListenUrl.Value;
+                    runtime.RegisterCleanup(() => url.Dispose());
+                }
+                if (cwd.HasValue)
+                {
+                    var c = cwd.Value;
+                    runtime.RegisterCleanup(() => c.Dispose());
+                }
+            }
+            else
+            {
+                // Initialization failed: free immediately.
+                debuggerListenUrl?.Dispose();
+                cwd?.Dispose();
+            }
         }
     }
 

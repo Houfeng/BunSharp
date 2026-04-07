@@ -1,57 +1,27 @@
 {
-  // 使用 IntelliSense 了解相关属性。 
-  // 悬停以查看现有属性的描述。
-  // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
   "version": "0.2.0",
-  "compounds": [
-    {
-      "name": "Debug BunSharp.Demo + Attach Bun",
-      "configurations": [
-        "Debug BunSharp.Demo Host",
-        "Attach Bun (BunSharp.Demo)"
-      ],
-      "stopAll": true
-    }
-  ],
   "configurations": [
     {
       "type": "coreclr",
       "request": "launch",
-      "name": "Debug BunSharp.Demo Host",
+      "name": "Debug BunSharp.Demo",
       "preLaunchTask": "build BunSharp.Demo",
       "program": "${workspaceFolder}/BunSharp.Demo/bin/Debug/net10.0/BunSharp.Demo.dll",
       "cwd": "${workspaceFolder}",
-      "args": [
-        "BunSharp.Demo/assets/debug.ts"
-      ],
-      "env": {
-        "BUNSHARP_DEMO_DEBUG_MODE": "Break",
-        "BUNSHARP_DEMO_DEBUG_URL": "tcp://127.0.0.1:6499"
-      },
+      "args": ["BunSharp.Demo/assets/debug.ts"],
       "console": "integratedTerminal",
-      "stopAtEntry": false
-    },
-    {
-      "type": "coreclr",
-      "request": "launch",
-      "name": "Launch BunSharp.Demo Script",
-      "preLaunchTask": "build BunSharp.Demo",
-      "program": "${workspaceFolder}/BunSharp.Demo/bin/Debug/net10.0/BunSharp.Demo.dll",
-      "cwd": "${workspaceFolder}",
-      "args": [
-        "BunSharp.Demo/assets/debug.ts"
-      ],
-      "env": {
-        "BUNSHARP_DEMO_DEBUG_MODE": "Off"
-      },
-      "console": "integratedTerminal"
+      "stopAtEntry": false,
+      "serverReadyAction": {
+        "action": "startDebugging",
+        "pattern": "Bun Inspector",
+        "name": "Attach Bun"
+      }
     },
     {
       "type": "bun",
-      "internalConsoleOptions": "neverOpen",
       "request": "attach",
-      "name": "Attach Bun (BunSharp.Demo)",
-      "url": "ws://127.0.0.1:6499/",
+      "name": "Attach Bun",
+      "url": "ws://127.0.0.1:6499/debug",
       "stopOnEntry": false
     }
   ]

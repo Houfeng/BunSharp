@@ -55,9 +55,6 @@ public sealed class BenchmarkBridge
 
 public static class Program
 {
-  private const string DefaultDebuggerListenUrl = "tcp://127.0.0.1:6499";
-  private const string DebuggerModeEnvironmentVariable = "BUNSHARP_DEMO_DEBUG_MODE";
-  private const string DebuggerListenUrlEnvironmentVariable = "BUNSHARP_DEMO_DEBUG_URL";
 
   public static void Main(string[] args)
   {
@@ -94,7 +91,8 @@ public static class Program
   {
     var scriptPath = ResolveScriptPath(scriptPathArgument);
 
-    using var runtime = BunRuntime.Create(CreateScriptRuntimeOptions(scriptPath));
+    var options = CreateScriptRuntimeOptions(scriptPath);
+    using var runtime = BunRuntime.Create(options);
 
     var context = runtime.Context;
     ConfigureContext(context);
@@ -106,43 +104,12 @@ public static class Program
 
   private static BunRuntimeOptions CreateScriptRuntimeOptions(string scriptPath)
   {
-    var debuggerMode = ResolveDebuggerMode();
-    var debuggerListenUrl = ResolveDebuggerListenUrl(debuggerMode);
-
     return new BunRuntimeOptions
     {
       Cwd = Path.GetDirectoryName(scriptPath),
-      DebuggerMode = debuggerMode,
-      DebuggerListenUrl = debuggerListenUrl,
+      DebuggerMode = BunDebuggerMode.Break,
+      DebuggerListenUrl = "ws://127.0.0.1:6499/debug",
     };
-  }
-
-  private static BunDebuggerMode ResolveDebuggerMode()
-  {
-    var rawMode = Environment.GetEnvironmentVariable(DebuggerModeEnvironmentVariable);
-    if (string.IsNullOrWhiteSpace(rawMode))
-    {
-      return BunDebuggerMode.Attach;
-    }
-
-    if (Enum.TryParse<BunDebuggerMode>(rawMode, ignoreCase: true, out var debuggerMode))
-    {
-      return debuggerMode;
-    }
-
-    throw new InvalidOperationException(
-      $"Unsupported debugger mode '{rawMode}'. Expected one of: {string.Join(", ", Enum.GetNames<BunDebuggerMode>())}.");
-  }
-
-  private static string? ResolveDebuggerListenUrl(BunDebuggerMode debuggerMode)
-  {
-    if (debuggerMode == BunDebuggerMode.Off)
-    {
-      return null;
-    }
-
-    var rawUrl = Environment.GetEnvironmentVariable(DebuggerListenUrlEnvironmentVariable);
-    return string.IsNullOrWhiteSpace(rawUrl) ? DefaultDebuggerListenUrl : rawUrl;
   }
 
   private static void ConfigureContext(BunContext context)
