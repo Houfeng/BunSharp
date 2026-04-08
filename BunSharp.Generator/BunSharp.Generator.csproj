@@ -11,7 +11,7 @@
 
     <!-- NuGet package metadata -->
     <PackageId>BunSharp.Generator</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Description>Roslyn source generator for BunSharp. Generates JS interop glue code from [JSExport] attributes.</Description>
     <DevelopmentDependency>true</DevelopmentDependency>
   </PropertyGroup>
