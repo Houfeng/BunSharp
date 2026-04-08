@@ -23,6 +23,21 @@
       "name": "Attach Bun",
       "url": "ws://127.0.0.1:6499/debug",
       "stopOnEntry": false
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug BunSharp.Demo (AOT)",
+      "preLaunchTask": "publish BunSharp.Demo (AOT)",
+      "program": "${workspaceFolder}/BunSharp.Demo/bin/Release/net10.0/osx-arm64/publish/BunSharp.Demo",
+      "cwd": "${workspaceFolder}",
+      "args": ["BunSharp.Demo/assets/debug.ts"],
+      "stopOnEntry": false,
+      "serverReadyAction": {
+        "action": "startDebugging",
+        "pattern": "Bun Inspector",
+        "name": "Attach Bun"
+      }
     }
   ]
 }

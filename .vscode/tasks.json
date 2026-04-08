@@ -16,6 +16,19 @@
         "isDefault": true
       },
       "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "publish BunSharp.Demo (AOT)",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "publish",
+        "${workspaceFolder}/BunSharp.Demo/BunSharp.Demo.csproj",
+        "-c",
+        "Release",
+        "--ucr"
+      ],
+      "problemMatcher": "$msCompile"
     }
   ]
 }
