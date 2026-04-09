@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/BunSharp.png" width="256" alt="BunSharp" />
+  <img src="assets/BunSharp.png" width="200" alt="BunSharp" />
 
 # BunSharp
 
@@ -107,7 +107,7 @@ var context = runtime.Context;
 
 context.ExportType<DemoGreeter>();
 
-var value = context.EvaluateExpression(@"(() => {
+var value = context.Evaluate(@"(() => {
 	const greeter = new DemoGreeter('Ada', new Uint8Array([1, 2, 3, 4]));
 	return `${greeter.describe()}|${greeter.name}|${greeter.payload.length}|${DemoGreeter.version}`;
 })()");
