@@ -1,8 +1,13 @@
+<div align="center">
+  <img src="assets/BunSharp.png" width="120" alt="BunSharp" />
+
 # BunSharp
 
 [![NuGet](https://img.shields.io/nuget/v/BunSharp.svg)](https://www.nuget.org/packages/BunSharp)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512bd4)](https://dotnet.microsoft.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+</div>
 
 BunSharp is a .NET binding for the [Bun](https://bun.sh) embed API. It lets you create a Bun runtime, execute JavaScript or TypeScript, and export C# types into the JS environment.
 
@@ -12,6 +17,7 @@ BunSharp is a .NET binding for the [Bun](https://bun.sh) embed API. It lets you 
 - Register host functions on the JS global object
 - Export C# classes with `JSExportAttribute`
 - Support instance methods, instance properties, static members, and `byte[]` ↔ `Uint8Array`
+- Support `T[]` arrays as parameters and return values — including nested arrays (`T[][]`) and arrays of exported classes
 - No runtime reflection — AOT friendly
 
 ## Requirements
@@ -124,6 +130,46 @@ Console.WriteLine(context.ToManagedString(value));
 - Class names stay unchanged by default
 - Method and property names are exported as camelCase by default
 - `JSExport(false)` on a member excludes that member from export
+
+## Arrays
+
+`T[]` is supported wherever any other type is supported: constructor parameters, method parameters, return values, and properties. Supported element types: `bool`, `int`, `double`, `string`, `byte[]`, `BunValue`, any `[JSExport]` class, and nested arrays.
+
+A JS `Array` is mapped to a C# `T[]`; `null` / `undefined` maps to `null`.
+
+```csharp
+[JSExport]
+public sealed class DataService
+{
+    public DataService() { }
+
+    // string[] ↔ JS Array of strings
+    public string[] reverseNames(string[] names)
+    {
+        Array.Reverse(names);
+        return names;
+    }
+
+    // [JSExport] class array
+    public DemoGreeter[] makeGreeters(string[] names)
+        => names.Select(n => new DemoGreeter(n, [])).ToArray();
+
+    // nested array
+    public string[][] transpose(string[][] matrix) { /* ... */ }
+
+    // static property
+    public static string[] Tags => ["fast", "aot", "ts"];
+}
+```
+
+```ts
+const svc = new DataService();
+console.log(svc.reverseNames(["a", "b", "c"]));			// ["c", "b", "a"]
+console.log(svc.makeGreeters(["Alice", "Bob"])[0].describe());	// Alice:0
+console.log(DataService.tags);								// ["fast", "aot", "ts"]
+```
+
+> **Note:** `byte[]` always maps to `Uint8Array` via a zero-copy path and is independent of the general `T[]` mechanism.
 
 ## Host Functions
 
