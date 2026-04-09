@@ -803,7 +803,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
     private static string ElementReadExpression(TypeRefModel elementType, string valueExpr, string ctxExpr)
     {
-        return elementType.Kind switch
+        var expr = elementType.Kind switch
         {
             ExportValueKind.Bool => $"{ctxExpr}.ToBoolean({valueExpr})",
             ExportValueKind.Int32 => $"{ctxExpr}.ToInt32({valueExpr})",
@@ -815,6 +815,10 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             ExportValueKind.Array => $"{GetArrayReadHelperName(elementType)}({ctxExpr}, {valueExpr})",
             _ => throw new InvalidOperationException($"Unsupported element kind {elementType.Kind}.")
         };
+        // Null-forgiving for reference-typed elements so the helper returns T[] not T?[]
+        if (elementType.Kind is ExportValueKind.String or ExportValueKind.ByteArray or ExportValueKind.ExportedObject or ExportValueKind.Array)
+            expr += "!";
+        return expr;
     }
 
     private static string ElementWriteExpression(TypeRefModel elementType, string valueExpr, string ctxExpr)
@@ -838,14 +842,17 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         var elementType = arrayType.ElementType!;
         var helperName = GetArrayReadHelperName(arrayType);
         var csharpElementType = elementType.FullyQualifiedTypeName;
-        var isNullableElement = elementType.Kind is ExportValueKind.String or ExportValueKind.ByteArray
-                                or ExportValueKind.ExportedObject or ExportValueKind.Array;
-        var elementTypeAnnotation = isNullableElement ? csharpElementType + "?" : csharpElementType;
-        var nullForgiving = isNullableElement ? "" : "";
+        // For nested arrays (e.g. string[][]), the allocation needs the size in the
+        // outermost bracket: new string[size][]. We use the array type's own FQN and
+        // insert the size expression into the first "[]".
+        var arrayFqn = arrayType.FullyQualifiedTypeName; // e.g. global::System.String[][]
+        var allocExpr = arrayFqn.IndexOf("[]", StringComparison.Ordinal) is var idx && idx >= 0
+            ? arrayFqn.Substring(0, idx) + "[checked((int)len)]" + arrayFqn.Substring(idx + 2)
+            : csharpElementType + "[checked((int)len)]";
 
         builder.AppendLine();
         builder.Append("    public static ");
-        builder.Append(elementTypeAnnotation);
+        builder.Append(csharpElementType);
         builder.Append("[]? ");
         builder.Append(helperName);
         builder.AppendLine("(global::BunSharp.BunContext context, global::BunSharp.BunValue value)");
@@ -854,12 +861,11 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        var len = context.GetArrayLength(value);");
         builder.AppendLine("        if (len < 0L) throw new InvalidOperationException(\"Expected a JS Array.\");");
         builder.Append("        var arr = new ");
-        builder.Append(elementTypeAnnotation);
-        builder.AppendLine("[checked((int)len)];");
+        builder.Append(allocExpr);
+        builder.AppendLine(";");
         builder.AppendLine("        for (var i = 0; i < arr.Length; i++)");
         builder.Append("            arr[i] = ");
         builder.Append(ElementReadExpression(elementType, "context.GetIndex(value, (uint)i)", "context"));
-        if (isNullableElement) builder.Append(""); // already nullable
         builder.AppendLine(";");
         builder.AppendLine("        return arr;");
         builder.AppendLine("    }");
@@ -870,15 +876,12 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         var elementType = arrayType.ElementType!;
         var helperName = GetArrayWriteHelperName(arrayType);
         var csharpElementType = elementType.FullyQualifiedTypeName;
-        var isNullableElement = elementType.Kind is ExportValueKind.String or ExportValueKind.ByteArray
-                                or ExportValueKind.ExportedObject or ExportValueKind.Array;
-        var elementTypeAnnotation = isNullableElement ? csharpElementType + "?" : csharpElementType;
 
         builder.AppendLine();
         builder.Append("    public static global::BunSharp.BunValue ");
         builder.Append(helperName);
         builder.Append("(global::BunSharp.BunContext context, ");
-        builder.Append(elementTypeAnnotation);
+        builder.Append(csharpElementType);
         builder.AppendLine("[]? value)");
         builder.AppendLine("    {");
         builder.AppendLine("        if (value is null) return global::BunSharp.BunValue.Null;");
@@ -1119,7 +1122,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        return WrapManaged(context, instance);");
         builder.AppendLine("    }");
         builder.AppendLine();
-        builder.Append("    private static global::BunSharp.BunValue WrapManaged(global::BunSharp.BunContext context, ");
+        builder.Append("    internal static global::BunSharp.BunValue WrapManaged(global::BunSharp.BunContext context, ");
         builder.Append(model.FullyQualifiedTypeName);
         builder.AppendLine("? instance)");
         builder.AppendLine("    {");
@@ -1144,7 +1147,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        }");
         builder.AppendLine("    }");
         builder.AppendLine();
-        builder.Append("    private static ");
+        builder.Append("    internal static ");
         builder.Append(model.FullyQualifiedTypeName);
         builder.AppendLine("? UnwrapManaged(global::BunSharp.BunContext context, global::BunSharp.BunValue value)");
         builder.AppendLine("    {");

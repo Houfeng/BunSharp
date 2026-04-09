@@ -53,6 +53,57 @@ public sealed class BenchmarkBridge
   }
 }
 
+[JSExport]
+public sealed class ArrayDemo
+{
+  public ArrayDemo() { }
+
+  public string[] reverseStrings(string[] items)
+  {
+    Array.Reverse(items);
+    return items;
+  }
+
+  public int[] doubleInts(int[] values)
+  {
+    for (var i = 0; i < values.Length; i++)
+      values[i] *= 2;
+    return values;
+  }
+
+  public double sum(double[] values)
+  {
+    var total = 0.0;
+    foreach (var v in values) total += v;
+    return total;
+  }
+
+  public DemoGreeter[] makeGreeters(string[] names)
+  {
+    var result = new DemoGreeter[names.Length];
+    for (var i = 0; i < names.Length; i++)
+      result[i] = new DemoGreeter(names[i], new byte[] { (byte)i });
+    return result;
+  }
+
+  public string[][] transpose(string[][] matrix)
+  {
+    if (matrix.Length == 0) return [];
+    var rows = matrix.Length;
+    var cols = matrix[0].Length;
+    var result = new string[cols][];
+    for (var c = 0; c < cols; c++)
+    {
+      result[c] = new string[rows];
+      for (var r = 0; r < rows; r++)
+        result[c][r] = matrix[r][c];
+    }
+    return result;
+  }
+
+  public static string[] StaticNames => ["alpha", "beta", "gamma"];
+}
+
 public static class Program
 {
 
@@ -135,6 +186,7 @@ public static class Program
 
     context.ExportType<DemoGreeter>();
     context.ExportType<BenchmarkBridge>();
+    context.ExportType<ArrayDemo>();
   }
 
   private static void RunDefaultValidation(BunContext context)
@@ -167,7 +219,41 @@ public static class Program
     var tString = context.ToManagedString(tValue);
     Console.WriteLine($"The type of Promise is: {tString}");
 
+    RunArrayValidation(context);
     RunBenchmarks(context);
+  }
+
+  private static void RunArrayValidation(BunContext context)
+  {
+    var arrayResult = context.Evaluate(@"(() => {
+      const a = new ArrayDemo();
+      const results = [];
+
+      // string[] roundtrip
+      const rev = a.reverseStrings(['a','b','c']);
+      results.push('reverse: ' + rev.join(','));
+
+      // int[] roundtrip
+      const doubled = a.doubleInts([1,2,3]);
+      results.push('double: ' + doubled.join(','));
+
+      // double[] -> scalar
+      results.push('sum: ' + a.sum([1.5, 2.5, 3.0]));
+
+      // JSExport class array
+      const greeters = a.makeGreeters(['Alice','Bob']);
+      results.push('greeters: ' + greeters.map(g => g.describe()).join('; '));
+
+      // nested string[][]
+      const transposed = a.transpose([['a','b'],['c','d'],['e','f']]);
+      results.push('transpose: ' + transposed.map(r => r.join(',')).join('|'));
+
+      // static property string[]
+      results.push('static: ' + ArrayDemo.staticNames.join(','));
+
+      return results.join(' | ');
+    })()");
+    Console.WriteLine($"[Array validation] {context.ToManagedString(arrayResult)}");
   }
 
   private static void RunBenchmarks(BunContext context)
