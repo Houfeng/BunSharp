@@ -9,8 +9,8 @@
 
 </div>
 
-BunSharp is a .NET binding for the [Bun](https://bun.sh) embed API. It lets you create a Bun runtime, execute JavaScript or TypeScript, and export C# types into the JS environment.
-
+BunSharp is a .NET binding for the [libbun](https://github.com/Houfeng/libbun) embed API (libbun based on ([Bun](https://github.com/oven-sh/bun)). It lets you create a Bun runtime, execute JavaScript or TypeScript, and export C# types into the JS environment.
+ 
 ## Features
 
 - Evaluate JavaScript and TypeScript from .NET
