@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <!-- Shared package metadata -->
+    <Version>0.1.1</Version>
+    <PackageIcon>BunSharp.png</PackageIcon>
     <Authors>Houfeng</Authors>
     <PackageProjectUrl>https://github.com/Houfeng/BunSharp</PackageProjectUrl>
     <RepositoryUrl>https://github.com/Houfeng/BunSharp</RepositoryUrl>
@@ -17,5 +19,13 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
+
+  <!-- Package icon (inherited by all packable projects) -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)assets/BunSharp.png"
+          Pack="true"
+          PackagePath="\"
+          Visible="false" />
+  </ItemGroup>
 
 </Project>

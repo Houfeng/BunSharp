@@ -8,7 +8,6 @@
 
     <!-- NuGet package metadata -->
     <PackageId>BunSharp</PackageId>
-    <Version>0.1.1</Version>
     <Description>A .NET binding for the Bun embed API. Run JavaScript/TypeScript from .NET and export C# types into the JS environment.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
