@@ -5,7 +5,7 @@
 
 [![NuGet](https://img.shields.io/nuget/v/BunSharp.svg)](https://www.nuget.org/packages/BunSharp)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512bd4)](https://dotnet.microsoft.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: LGPL v2.1](https://img.shields.io/badge/License-LGPL_v2.1-blue.svg)](LICENSE)
 
 </div>
 
@@ -198,4 +198,4 @@ Bug reports and pull requests are welcome on [GitHub](https://github.com/Houfeng
 
 ## License
 
-[MIT](LICENSE)
+[LGPL-2.1](LICENSE)
