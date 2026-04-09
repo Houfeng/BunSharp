@@ -11,6 +11,8 @@ internal static unsafe class BunManagedCallbackRegistry
 
     public static nint HostFunctionPointer => (nint)(delegate* unmanaged[Cdecl]<nint, int, BunValue*, nint, BunValue>)&HostFunctionThunk;
 
+    public static nint EventCallbackPointer => (nint)(delegate* unmanaged[Cdecl]<nint, void>)&EventCallbackThunk;
+
     public static nint FinalizerPointer => (nint)(delegate* unmanaged[Cdecl]<nint, void>)&FinalizerThunk;
 
     public static nint ClassMethodPointer => (nint)(delegate* unmanaged[Cdecl]<nint, BunValue, nint, int, BunValue*, nint, BunValue>)&ClassMethodThunk;
@@ -102,6 +104,11 @@ internal static unsafe class BunManagedCallbackRegistry
         return new BunCallbackHandle(new HostCallbackState(callback, userdata));
     }
 
+    public static BunCallbackHandle CreateEventCallback(BunManagedEventCallback callback, BunRuntime runtime, nint userdata)
+    {
+        return new BunCallbackHandle(new EventCallbackState(callback, runtime, userdata));
+    }
+
     public static BunCallbackHandle CreateGetter(BunManagedGetter callback)
     {
         return new BunCallbackHandle(new GetterSetterCallbackState(callback, null));
@@ -189,6 +196,19 @@ internal static unsafe class BunManagedCallbackRegistry
         catch
         {
             return BunValue.Undefined;
+        }
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void EventCallbackThunk(nint userdata)
+    {
+        try
+        {
+            var state = GetState<EventCallbackState>(userdata);
+            state.Callback(state.Runtime, state.UserData);
+        }
+        catch
+        {
         }
     }
 
@@ -401,6 +421,8 @@ internal static unsafe class BunManagedCallbackRegistry
     }
 
     private sealed record HostCallbackState(BunManagedHostCallback Callback, nint UserData);
+
+    private sealed record EventCallbackState(BunManagedEventCallback Callback, BunRuntime Runtime, nint UserData);
 
     private sealed record FinalizerCallbackState(BunManagedFinalizer Callback, nint UserData);
 

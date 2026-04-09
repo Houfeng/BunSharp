@@ -9,6 +9,7 @@ public sealed class BunRuntime : IDisposable
     private readonly Dictionary<BunValue, BunObjectFinalizerRegistration> _objectFinalizerRegistrations = [];
     private readonly List<Action> _cleanupCallbacks = [];
     private readonly int _threadId;
+    private BunCallbackHandle? _eventCallbackHandle;
     private BunContext? _context;
     private bool _disposed;
 
@@ -36,6 +37,11 @@ public sealed class BunRuntime : IDisposable
         }
     }
 
+    /// <summary>
+    /// Gets the runtime event-loop file descriptor when the platform exposes one.
+    /// Returns -1 on Windows and on platforms where libbun cannot provide a pollable descriptor.
+    /// Prefer <see cref="SetEventCallback(BunManagedEventCallback?, nint)"/> for a cross-platform wake-up mechanism.
+    /// </summary>
     public int EventFileDescriptor
     {
         get
@@ -127,10 +133,47 @@ public sealed class BunRuntime : IDisposable
         return BunNative.RunPendingJobs(Handle) != 0;
     }
 
+    /// <summary>
+    /// Wakes the runtime event loop from any thread so the next <see cref="RunPendingJobs"/> processes queued work.
+    /// Calls queued via <see cref="BunContext.TryCallAsync(BunValue, BunValue, ReadOnlySpan{BunValue})"/> already wake the loop automatically.
+    /// </summary>
     public void Wakeup()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         BunNative.Wakeup(Handle);
+    }
+
+    /// <summary>
+    /// Registers a managed callback invoked by libbun from a background thread whenever the runtime has ready work.
+    /// Pass <see langword="null"/> to unregister the current callback.
+    /// The callback must be thread-safe and should only wake or signal the host loop; drive Bun itself later from the owning thread.
+    /// </summary>
+    public void SetEventCallback(BunManagedEventCallback? callback, nint userdata = 0)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        VerifyThread();
+
+        BunCallbackHandle? nextHandle = null;
+        try
+        {
+            if (callback is not null)
+            {
+                nextHandle = BunManagedCallbackRegistry.CreateEventCallback(callback, this, userdata);
+            }
+
+            BunNative.SetEventCallback(
+                Handle,
+                callback is null ? 0 : BunManagedCallbackRegistry.EventCallbackPointer,
+                nextHandle?.Pointer ?? 0);
+
+            Interlocked.Exchange(ref _eventCallbackHandle, nextHandle)?.Dispose();
+            nextHandle = null;
+        }
+        catch
+        {
+            nextHandle?.Dispose();
+            throw;
+        }
     }
 
     public void Dispose()
@@ -142,8 +185,14 @@ public sealed class BunRuntime : IDisposable
 
         if (Handle != 0)
         {
+            BunNative.SetEventCallback(Handle, 0, 0);
+            Interlocked.Exchange(ref _eventCallbackHandle, null)?.Dispose();
             BunNative.Destroy(Handle);
             Handle = 0;
+        }
+        else
+        {
+            Interlocked.Exchange(ref _eventCallbackHandle, null)?.Dispose();
         }
 
         foreach (var callback in _cleanupCallbacks)

@@ -391,6 +391,11 @@ public unsafe sealed class BunContext
         }
     }
 
+    public bool TryCallAsync(BunValue function, BunValue thisValue, ReadOnlySpan<BunValue> args)
+    {
+        return CallAsync(function, thisValue, args) != 0;
+    }
+
     public void Protect(BunValue value)
     {
         VerifyThread();

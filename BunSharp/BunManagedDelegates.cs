@@ -2,6 +2,8 @@ namespace BunSharp;
 
 public delegate BunValue BunManagedHostCallback(BunContext context, ReadOnlySpan<BunValue> args, nint userdata);
 
+public delegate void BunManagedEventCallback(BunRuntime runtime, nint userdata);
+
 public delegate BunValue BunManagedGetter(BunContext context, BunValue thisValue);
 
 public delegate void BunManagedSetter(BunContext context, BunValue thisValue, BunValue value);

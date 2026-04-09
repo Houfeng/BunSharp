@@ -246,14 +246,72 @@ BunValue bun_eval_file(BunContext* ctx, const char* path, size_t path_len);
 int bun_run_pending_jobs(BunRuntime* rt);
 
 /// Get the underlying OS event loop file descriptor (epoll fd on Linux,
-/// kqueue fd on macOS). You can monitor this fd in your GUI's event loop
-/// (e.g., via CFFileDescriptor/GSource) and call bun_run_pending_jobs()
-/// when it becomes readable. Returns -1 on Windows or if unavailable.
+/// kqueue fd on macOS). You can monitor this fd with poll()/select() or your
+/// GUI framework's I/O source (e.g. CFFileDescriptor, GSource) and call
+/// bun_run_pending_jobs() when it becomes readable.
+///
+/// Returns -1 on Windows (IOCP has no pollable fd) or if unavailable.
+///
+/// Cross-platform alternative: bun_set_event_callback() works on all
+/// platforms including Windows and does not require manual fd polling.
 int bun_get_event_fd(BunRuntime* rt);
 
 /// Thread-safe: wake up the event loop from any thread. After calling this,
 /// the next bun_run_pending_jobs() will process any concurrently queued work.
+///
+/// NOTE: bun_call_async() already calls this internally after enqueuing the
+/// call, so there is no need to follow bun_call_async() with bun_wakeup().
 void bun_wakeup(BunRuntime* rt);
+
+/// Callback invoked from a Bun-internal background thread when the runtime has
+/// ready work and the host loop should be woken (e.g. SDL_PushEvent,
+/// PostMessage, …).
+///
+/// THREAD SAFETY: Invoked from a background thread, NOT from the host's main
+/// thread. The callback must be thread-safe.
+///
+/// Intended use: signal or wake the host loop, then call
+/// bun_run_pending_jobs() later from the runtime's owning thread.
+///
+/// @param userdata  The pointer passed to bun_set_event_callback().
+typedef void (*BunEventCallback)(void* userdata);
+
+/// Set the event-ready callback used to wake the host loop, replacing any
+/// previously set one.
+///
+/// Starts an internal background thread that monitors the event loop.
+/// Each call immediately stops the previous background thread (if any) and
+/// starts a new one — only the most recently set callback is ever active.
+/// Prefer calling this once at startup rather than repeatedly.
+/// Pass NULL for cb to stop monitoring without starting a new thread.
+///
+/// POSIX (Linux / macOS):
+///   The thread blocks on the kernel event fd (epoll on Linux, kqueue on
+///   macOS) via poll(). Zero CPU while idle. All event types — I/O, timers,
+///   and cross-thread wakeups (bun_wakeup → loop.wakeup()) — are delivered
+///   through the same fd, so the callback fires with near-zero latency when
+///   real work arrives. The watcher does not use a periodic idle timeout;
+///   callback replacement / shutdown wakes the loop explicitly to break the
+///   blocking poll immediately.
+///
+/// Windows (IOCP dequeue-requeue):
+///   The thread blocks on libuv's internal IOCP handle via
+///   GetQueuedCompletionStatusEx(). This is a true OS-level blocking wait —
+///   zero CPU while idle. Work-ready conditions are detected as follows:
+///     • Network / file I/O  → OS posts IOCP completion → immediate wake
+///     • bun_wakeup()        → uv_async_send posts synthetic IOCP → immediate
+///     • Timers              → uv_backend_timeout() used as IOCP deadline →
+///                             exact to the millisecond
+///   Indefinite idle waits do NOT generate periodic callbacks. If the watcher
+///   dequeues IOCP packets, it re-enqueues them via PostQueuedCompletionStatus
+///   so libuv processes them normally, then fires the callback, and waits for
+///   bun_run_pending_jobs() to signal an ACK event before resuming the next
+///   blocking wait.
+///
+/// @param rt        Runtime handle.
+/// @param cb        Callback invoked when work is ready (NULL to unregister).
+/// @param userdata  Forwarded verbatim to the callback.
+void bun_set_event_callback(BunRuntime* rt, BunEventCallback cb, void* userdata);
 
 // --------------------------------------------------------------------------
 // Value Creation
@@ -555,6 +613,8 @@ const char* bun_last_error(BunContext* ctx, size_t* out_len);
 /// Queue a JavaScript function call to run on the context's owning runtime.
 ///
 /// The call is executed later when the host drives bun_run_pending_jobs().
+/// On success this also wakes the runtime's event loop automatically, so an
+/// additional bun_wakeup() call is usually unnecessary.
 /// Returns 1 if queued successfully, 0 on failure.
 int bun_call_async(BunContext* ctx, BunValue fn, BunValue this_value, int argc, const BunValue* argv);
 

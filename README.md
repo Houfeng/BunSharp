@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/BunSharp.png" width="120" alt="BunSharp" />
+  <img src="assets/BunSharp.png" width="256" alt="BunSharp" />
 
 # BunSharp
 
@@ -190,6 +190,27 @@ var hello = context.CreateFunction(
 
 context.SetProperty(context.GlobalObject, "helloFromDotNet", hello);
 context.Evaluate("console.log(helloFromDotNet('Bun')); ");
+```
+
+## Event Loop Integration
+
+For GUI apps or custom host loops, call `RunPendingJobs()` from the thread that created the runtime. On macOS and Linux you can poll `EventFileDescriptor`; on Windows it returns `-1`.
+
+For a cross-platform wake-up path, register `SetEventCallback()`. The callback runs on a Bun-managed background thread, so it should only signal your host loop and let the owning thread call `RunPendingJobs()` later.
+
+```csharp
+using BunSharp;
+
+using var runtime = BunRuntime.Create();
+
+runtime.SetEventCallback(static (_, _) =>
+{
+	// Wake your UI loop here, e.g. post to SynchronizationContext or enqueue work.
+});
+
+while (runtime.RunPendingJobs())
+{
+}
 ```
 
 ## Contributing

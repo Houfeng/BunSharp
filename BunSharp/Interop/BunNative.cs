@@ -403,6 +403,9 @@ public static unsafe partial class BunNative
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_wakeup")]
     public static partial void Wakeup(nint runtime);
 
+    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_set_event_callback")]
+    public static partial void SetEventCallback(nint runtime, nint callback, nint userdata);
+
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_bool")]
     public static partial BunValue Bool(int value);
 
