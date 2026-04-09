@@ -322,7 +322,15 @@ public unsafe sealed class BunContext
 
     public bool IsObject(BunValue value) => BunNative.IsObject(value) != 0;
 
+    public bool IsArray(BunValue value) => BunNative.IsArray(value) != 0;
+
     public bool IsCallable(BunValue value) => BunNative.IsCallable(value) != 0;
+
+    public long GetArrayLength(BunValue value)
+    {
+        VerifyThread();
+        return BunNative.ArrayLength(Handle, value);
+    }
 
     public bool ToBoolean(BunValue value) => BunNative.ToBool(value) != 0;
 

@@ -20,7 +20,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
     private static readonly DiagnosticDescriptor UnsupportedTypeDescriptor = new(
         id: "LBSG001",
         title: "Unsupported export type",
-        messageFormat: "Member '{0}' uses unsupported type '{1}'. Supported types are bool, int, double, string, byte[], BunValue, void, and JS-exported classes in the same assembly.",
+        messageFormat: "Member '{0}' uses unsupported type '{1}'. Supported types are bool, int, double, string, byte[], T[], BunValue, void, and JS-exported classes in the same assembly.",
         category: DiagnosticCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -489,6 +489,18 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             return true;
         }
 
+        if (type is IArrayTypeSymbol generalArrayType && generalArrayType.Rank == 1)
+        {
+            if (!TryCreateTypeRef(context, generalArrayType.ElementType, memberName, bunValueSymbol, exportedTypeNames, allowVoid: false, out var elementTypeRef))
+            {
+                typeRef = default!;
+                return false;
+            }
+
+            typeRef = new TypeRefModel(ExportValueKind.Array, fullyQualifiedName, null, isNullableReferenceType: type.NullableAnnotation == NullableAnnotation.Annotated, elementType: elementTypeRef);
+            return true;
+        }
+
         if (SymbolEqualityComparer.Default.Equals(type, bunValueSymbol))
         {
             typeRef = new TypeRefModel(ExportValueKind.BunValue, fullyQualifiedName, null, isNullableReferenceType: false);
@@ -511,7 +523,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             memberName,
             type.ToDisplayString()));
 
-        typeRef = default;
+        typeRef = default!;
         return false;
     }
 
@@ -580,7 +592,9 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("    }");
         builder.AppendLine("}");
         builder.AppendLine();
-        AppendCommonHelpers(builder);
+
+        var arrayTypes = CollectAllArrayTypeRefs(models);
+        AppendCommonHelpers(builder, arrayTypes);
 
         foreach (var model in models)
         {
@@ -590,7 +604,64 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         return builder.ToString();
     }
 
-    private static void AppendCommonHelpers(StringBuilder builder)
+    private static List<TypeRefModel> CollectAllArrayTypeRefs(IReadOnlyList<ExportedTypeModel> models)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<TypeRefModel>();
+
+        void Visit(TypeRefModel typeRef)
+        {
+            if (typeRef.Kind == ExportValueKind.Array)
+            {
+                var helperName = GetArrayElementTypeSuffix(typeRef.ElementType!);
+                if (seen.Add(helperName))
+                {
+                    // Visit the element type first so nested helpers are emitted before the outer helper.
+                    Visit(typeRef.ElementType!);
+                    result.Add(typeRef);
+                }
+            }
+        }
+
+        foreach (var model in models)
+        {
+            foreach (var p in model.ConstructorParameters) Visit(p.Type);
+            foreach (var m in model.InstanceMethods) { Visit(m.ReturnType); foreach (var p in m.Parameters) Visit(p.Type); }
+            foreach (var m in model.StaticMethods) { Visit(m.ReturnType); foreach (var p in m.Parameters) Visit(p.Type); }
+            foreach (var prop in model.InstanceProperties) Visit(prop.PropertyType);
+            foreach (var prop in model.StaticProperties) Visit(prop.PropertyType);
+        }
+
+        return result;
+    }
+
+    private static string GetArrayElementTypeSuffix(TypeRefModel elementType)
+    {
+        return elementType.Kind switch
+        {
+            ExportValueKind.Bool => "Bool",
+            ExportValueKind.Int32 => "Int32",
+            ExportValueKind.Double => "Double",
+            ExportValueKind.String => "String",
+            ExportValueKind.ByteArray => "ByteArray",
+            ExportValueKind.BunValue => "BunValue",
+            ExportValueKind.ExportedObject => elementType.HelperId!,
+            ExportValueKind.Array => "Array_" + GetArrayElementTypeSuffix(elementType.ElementType!),
+            _ => throw new InvalidOperationException($"Unsupported array element kind {elementType.Kind}."),
+        };
+    }
+
+    private static string GetArrayReadHelperName(TypeRefModel arrayType)
+    {
+        return "ReadArray_" + GetArrayElementTypeSuffix(arrayType.ElementType!);
+    }
+
+    private static string GetArrayWriteHelperName(TypeRefModel arrayType)
+    {
+        return "CreateArray_" + GetArrayElementTypeSuffix(arrayType.ElementType!);
+    }
+
+    private static void AppendCommonHelpers(StringBuilder builder, List<TypeRefModel> arrayTypes)
     {
         builder.AppendLine("internal static class __JSExportCommon");
         builder.AppendLine("{");
@@ -719,8 +790,105 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("            throw;");
         builder.AppendLine("        }");
         builder.AppendLine("    }");
+
+        foreach (var arrayType in arrayTypes)
+        {
+            AppendArrayReadHelper(builder, arrayType);
+            AppendArrayWriteHelper(builder, arrayType);
+        }
+
         builder.AppendLine("}");
         builder.AppendLine();
+    }
+
+    private static string ElementReadExpression(TypeRefModel elementType, string valueExpr, string ctxExpr)
+    {
+        return elementType.Kind switch
+        {
+            ExportValueKind.Bool => $"{ctxExpr}.ToBoolean({valueExpr})",
+            ExportValueKind.Int32 => $"{ctxExpr}.ToInt32({valueExpr})",
+            ExportValueKind.Double => $"{ctxExpr}.ToNumber({valueExpr})",
+            ExportValueKind.String => $"ReadString({ctxExpr}, {valueExpr})",
+            ExportValueKind.ByteArray => $"ReadByteArray({ctxExpr}, {valueExpr})",
+            ExportValueKind.BunValue => valueExpr,
+            ExportValueKind.ExportedObject => $"{elementType.HelperId}.UnwrapManaged({ctxExpr}, {valueExpr})",
+            ExportValueKind.Array => $"{GetArrayReadHelperName(elementType)}({ctxExpr}, {valueExpr})",
+            _ => throw new InvalidOperationException($"Unsupported element kind {elementType.Kind}.")
+        };
+    }
+
+    private static string ElementWriteExpression(TypeRefModel elementType, string valueExpr, string ctxExpr)
+    {
+        return elementType.Kind switch
+        {
+            ExportValueKind.Bool => $"{ctxExpr}.CreateBoolean({valueExpr})",
+            ExportValueKind.Int32 => $"{ctxExpr}.CreateInt32({valueExpr})",
+            ExportValueKind.Double => $"{ctxExpr}.CreateNumber({valueExpr})",
+            ExportValueKind.String => $"{valueExpr} is null ? global::BunSharp.BunValue.Null : {ctxExpr}.CreateString({valueExpr})",
+            ExportValueKind.ByteArray => $"CreateByteArray({ctxExpr}, {valueExpr})",
+            ExportValueKind.BunValue => valueExpr,
+            ExportValueKind.ExportedObject => $"{elementType.HelperId}.WrapManaged({ctxExpr}, {valueExpr})",
+            ExportValueKind.Array => $"{GetArrayWriteHelperName(elementType)}({ctxExpr}, {valueExpr})",
+            _ => throw new InvalidOperationException($"Unsupported element kind {elementType.Kind}.")
+        };
+    }
+
+    private static void AppendArrayReadHelper(StringBuilder builder, TypeRefModel arrayType)
+    {
+        var elementType = arrayType.ElementType!;
+        var helperName = GetArrayReadHelperName(arrayType);
+        var csharpElementType = elementType.FullyQualifiedTypeName;
+        var isNullableElement = elementType.Kind is ExportValueKind.String or ExportValueKind.ByteArray
+                                or ExportValueKind.ExportedObject or ExportValueKind.Array;
+        var elementTypeAnnotation = isNullableElement ? csharpElementType + "?" : csharpElementType;
+        var nullForgiving = isNullableElement ? "" : "";
+
+        builder.AppendLine();
+        builder.Append("    public static ");
+        builder.Append(elementTypeAnnotation);
+        builder.Append("[]? ");
+        builder.Append(helperName);
+        builder.AppendLine("(global::BunSharp.BunContext context, global::BunSharp.BunValue value)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        if (context.IsNull(value) || context.IsUndefined(value)) return null;");
+        builder.AppendLine("        var len = context.GetArrayLength(value);");
+        builder.AppendLine("        if (len < 0L) throw new InvalidOperationException(\"Expected a JS Array.\");");
+        builder.Append("        var arr = new ");
+        builder.Append(elementTypeAnnotation);
+        builder.AppendLine("[checked((int)len)];");
+        builder.AppendLine("        for (var i = 0; i < arr.Length; i++)");
+        builder.Append("            arr[i] = ");
+        builder.Append(ElementReadExpression(elementType, "context.GetIndex(value, (uint)i)", "context"));
+        if (isNullableElement) builder.Append(""); // already nullable
+        builder.AppendLine(";");
+        builder.AppendLine("        return arr;");
+        builder.AppendLine("    }");
+    }
+
+    private static void AppendArrayWriteHelper(StringBuilder builder, TypeRefModel arrayType)
+    {
+        var elementType = arrayType.ElementType!;
+        var helperName = GetArrayWriteHelperName(arrayType);
+        var csharpElementType = elementType.FullyQualifiedTypeName;
+        var isNullableElement = elementType.Kind is ExportValueKind.String or ExportValueKind.ByteArray
+                                or ExportValueKind.ExportedObject or ExportValueKind.Array;
+        var elementTypeAnnotation = isNullableElement ? csharpElementType + "?" : csharpElementType;
+
+        builder.AppendLine();
+        builder.Append("    public static global::BunSharp.BunValue ");
+        builder.Append(helperName);
+        builder.Append("(global::BunSharp.BunContext context, ");
+        builder.Append(elementTypeAnnotation);
+        builder.AppendLine("[]? value)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        if (value is null) return global::BunSharp.BunValue.Null;");
+        builder.AppendLine("        var jsArr = context.CreateArray((nuint)value.Length);");
+        builder.AppendLine("        for (var i = 0; i < value.Length; i++)");
+        builder.Append("            EnsureIndexSet(context.SetIndex(jsArr, (uint)i, ");
+        builder.Append(ElementWriteExpression(elementType, "value[i]", "context"));
+        builder.AppendLine("), i);");
+        builder.AppendLine("        return jsArr;");
+        builder.AppendLine("    }");
     }
 
     private static void AppendTypeModel(StringBuilder builder, ExportedTypeModel model)
@@ -1203,10 +1371,11 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             ExportValueKind.ByteArray => $"__JSExportCommon.ReadByteArray({contextExpression}, {valueExpression})",
             ExportValueKind.BunValue => valueExpression,
             ExportValueKind.ExportedObject => $"{type.HelperId}.UnwrapManaged({contextExpression}, {valueExpression})",
+            ExportValueKind.Array => $"__JSExportCommon.{GetArrayReadHelperName(type)}({contextExpression}, {valueExpression})",
             _ => throw new InvalidOperationException($"Unsupported conversion kind {type.Kind}.")
         };
 
-        if (type.Kind is ExportValueKind.String or ExportValueKind.ByteArray or ExportValueKind.ExportedObject)
+        if (type.Kind is ExportValueKind.String or ExportValueKind.ByteArray or ExportValueKind.ExportedObject or ExportValueKind.Array)
         {
             return type.IsNullableReferenceType ? expression : expression + "!";
         }
@@ -1225,6 +1394,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             ExportValueKind.ByteArray => $"__JSExportCommon.CreateByteArray({contextExpression}, {valueExpression})",
             ExportValueKind.BunValue => valueExpression,
             ExportValueKind.ExportedObject => $"{type.HelperId}.WrapManaged({contextExpression}, {valueExpression})",
+            ExportValueKind.Array => $"__JSExportCommon.{GetArrayWriteHelperName(type)}({contextExpression}, {valueExpression})",
             _ => throw new InvalidOperationException($"Unsupported conversion kind {type.Kind}.")
         };
     }
@@ -1390,14 +1560,15 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         public string LocalName => Name + "Arg";
     }
 
-    private readonly struct TypeRefModel
+    private sealed class TypeRefModel
     {
-        public TypeRefModel(ExportValueKind kind, string fullyQualifiedTypeName, string? helperId, bool isNullableReferenceType)
+        public TypeRefModel(ExportValueKind kind, string fullyQualifiedTypeName, string? helperId, bool isNullableReferenceType, TypeRefModel? elementType = null)
         {
             Kind = kind;
             FullyQualifiedTypeName = fullyQualifiedTypeName;
             HelperId = helperId;
             IsNullableReferenceType = isNullableReferenceType;
+            ElementType = elementType;
         }
 
         public ExportValueKind Kind { get; }
@@ -1407,6 +1578,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         public string? HelperId { get; }
 
         public bool IsNullableReferenceType { get; }
+
+        public TypeRefModel? ElementType { get; }
     }
 
     private enum ExportValueKind
@@ -1418,6 +1591,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         ByteArray,
         BunValue,
         ExportedObject,
+        Array,
         Void,
     }
 }

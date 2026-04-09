@@ -481,6 +481,9 @@ public static unsafe partial class BunNative
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_is_object")]
     public static partial int IsObject(BunValue value);
 
+    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_is_array")]
+    public static partial int IsArray(BunValue value);
+
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_is_callable")]
     public static partial int IsCallable(BunValue value);
 
@@ -495,6 +498,9 @@ public static unsafe partial class BunNative
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_to_utf8")]
     public static partial nint ToUtf8(nint context, BunValue value, out nuint length);
+
+    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_array_length")]
+    public static partial long ArrayLength(nint context, BunValue value);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_set")]
     private static partial int SetCore(nint context, BunValue @object, byte* key, nuint keyLength, BunValue value);
