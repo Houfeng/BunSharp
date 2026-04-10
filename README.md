@@ -211,9 +211,15 @@ public sealed class IdentityOptionDemo
 }
 ```
 
-`Stable = true` enables stable JS identity for supported exports. Repeated JS reads of the same exported property return the same JS `Array` or `Uint8Array` object until the underlying C# property reference is replaced. Exported methods now use the same rule: consecutive returns of the same managed `byte[]` or `T[]` reference reuse the same cached JS object, but if the method switches to another reference and later switches back, JS receives a new object just like the property path.
+`Stable = true` enables stable JS identity for supported exports. Repeated JS reads of the same exported property return the same JS `Array` or `Uint8Array` object until the underlying C# property reference is replaced. Exported methods use the same rule for return values: consecutive returns of the same managed `byte[]` or `T[]` reference reuse the same cached JS object, but if the method switches to another reference and later switches back, JS receives a new object just like the property path.
 
-> **Current scope:** `Stable` is currently supported only on exported `byte[]` and `T[]` properties and method return values. It is not yet used on constructors, parameters, or arbitrary member types.
+`Stable` does not apply to constructor parameters or method parameters. Parameters are per-call inputs, and BunSharp does not try to infer whether an incoming value should be ignored after the call, retained as the latest value, or accumulated alongside other values. That decision belongs to your C# code.
+
+If a method needs to keep an incoming plain `byte[]` or `T[]` beyond the current call, store it explicitly in your own state, such as a field or property. If that exported property uses `JSExport(Stable = true)`, later JS reads of that property will get stable JS identity for the stored managed value.
+
+If you need to preserve the original JS object identity or shared backing storage itself, use the explicit reference types such as `JSFunctionRef`, `JSArrayRef`, `JSBufferRef`, or `JSArrayBufferRef` instead of relying on `Stable`.
+
+> **Current scope:** `Stable` is currently supported only on exported `byte[]` and `T[]` properties and method return values, plus delegate properties and delegate method return values where stable function-reference semantics are the default. It is not used on constructors, parameters, or arbitrary member types.
 
 ## Delegate Properties
 
@@ -253,6 +259,8 @@ Rules:
 When JS assigns a function to a delegate property, C# sees a typed delegate wrapper. When C# assigns a delegate to that property, JS reads back a callable function, and repeated reads return the same JS function object until the property changes.
 
 When a method returns a delegate, JS receives a callable function. Repeated calls that return the same managed delegate reuse the same JS function object until that method returns a different delegate for the same exported member.
+
+Like array and byte[] stable identity, this behavior is defined on exported properties and method return values only. Delegate parameters are not treated as stable exports; if a delegate passed into a call must be retained, store it explicitly in your own state or use `JSFunctionRef` for explicit JS-reference semantics.
 
 Typical `JSExport` class: no explicit reference types needed.
 
