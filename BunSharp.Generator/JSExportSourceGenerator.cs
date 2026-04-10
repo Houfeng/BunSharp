@@ -73,8 +73,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
     private static readonly DiagnosticDescriptor InvalidDelegateStableDescriptor = new(
         id: "LBSG007",
-        title: "Delegate properties are always stable",
-        messageFormat: "Member '{0}' is a delegate property and cannot declare Stable = false. Delegate properties always use stable JS function reference semantics.",
+        title: "Delegate exports are always stable",
+        messageFormat: "Member '{0}' uses a delegate export shape and cannot declare Stable = false. Delegate exports always use stable JS function reference semantics.",
         category: DiagnosticCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -395,17 +395,22 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             return false;
         }
 
+        var effectiveStable = exportRule.Stable;
         if (returnType.IsDelegate)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
-                UnsupportedMemberShapeDescriptor,
-                method.Locations.FirstOrDefault(),
-                method.Name,
-                "delegate return types are currently supported only on exported properties"));
-            return false;
+            if (exportRule.HasStableOption && !exportRule.Stable)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    InvalidDelegateStableDescriptor,
+                    method.Locations.FirstOrDefault(),
+                    method.Name));
+                return false;
+            }
+
+            effectiveStable = true;
         }
 
-        if (exportRule.Stable && !returnType.CanUseStableOption)
+        if (!returnType.IsDelegate && exportRule.Stable && !returnType.CanUseStableOption)
         {
             context.ReportDiagnostic(Diagnostic.Create(
             UnsupportedStableDescriptor,
@@ -421,7 +426,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             method.IsStatic,
             parameters,
             returnType,
-            exportRule.Stable);
+            effectiveStable);
 
         return true;
     }
@@ -1764,6 +1769,11 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             AppendDelegatePropertyHelpers(builder, model, property);
         }
 
+        foreach (var method in model.InstanceMethods.Concat(model.StaticMethods).Where(static method => method.ReturnType.IsDelegate))
+        {
+            AppendDelegateMethodHelpers(builder, model, method);
+        }
+
         builder.AppendLine("}");
         builder.AppendLine();
     }
@@ -1867,7 +1877,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.AppendLine("            return cached;");
             builder.AppendLine("        }");
             builder.Append("        var value = ");
-            builder.Append(ConvertToBunValue(method.ReturnType, "result", "context"));
+            builder.Append(method.ReturnType.IsDelegate ? $"{method.DelegateFunctionHelperName}(context, result)" : ConvertToBunValue(method.ReturnType, "result", "context"));
             builder.AppendLine(";");
             builder.Append("        registration.ClearStableIdentityValue(nativePtr, ");
             builder.Append(CSharpLiteral(method.MemberName));
@@ -2272,7 +2282,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.AppendLine("            return cached;");
             builder.AppendLine("        }");
             builder.Append("        var value = ");
-            builder.Append(ConvertToBunValue(method.ReturnType, "result", "context"));
+            builder.Append(method.ReturnType.IsDelegate ? $"{method.DelegateFunctionHelperName}(context, result)" : ConvertToBunValue(method.ReturnType, "result", "context"));
             builder.AppendLine(";");
             builder.Append("        registration.ClearStableIdentityValue(0, ");
             builder.Append(CSharpLiteral(method.MemberName));
@@ -2378,6 +2388,36 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        {");
         builder.Append("            __JSExportCommon.EnsureArgumentCount(");
         builder.Append(CSharpLiteral($"{model.ExportName}.{property.ExportName}"));
+        builder.Append(", args, ");
+        builder.Append(signature.Parameters.Length.ToString(CultureInfo.InvariantCulture));
+        builder.AppendLine(");");
+        AppendParameterReads(builder, signature.Parameters, "            ");
+        AppendInvocation(builder, signature.ReturnType, $"source({string.Join(", ", signature.Parameters.Select(static parameter => parameter.LocalName))})", "            ");
+        builder.Append("        }, argCount: ");
+        builder.Append(signature.Parameters.Length.ToString(CultureInfo.InvariantCulture));
+        builder.AppendLine(");");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+    }
+
+    private static void AppendDelegateMethodHelpers(StringBuilder builder, ExportedTypeModel model, ExportedMethodModel method)
+    {
+        var delegateType = method.ReturnType.FullyQualifiedTypeName;
+        var signature = method.ReturnType.DelegateSignature ?? throw new InvalidOperationException("Delegate method returns require a delegate signature.");
+
+        builder.Append("    private static global::BunSharp.BunValue ");
+        builder.Append(method.DelegateFunctionHelperName);
+        builder.Append('(');
+        builder.Append("global::BunSharp.BunContext context, ");
+        builder.Append(delegateType);
+        builder.AppendLine(" source)");
+        builder.AppendLine("    {");
+        builder.Append("        return context.CreateFunction(");
+        builder.Append(CSharpLiteral(method.ExportName));
+        builder.AppendLine(", (callbackContext, args, _) =>");
+        builder.AppendLine("        {");
+        builder.Append("            __JSExportCommon.EnsureArgumentCount(");
+        builder.Append(CSharpLiteral($"{model.ExportName}.{method.ExportName}"));
         builder.Append(", args, ");
         builder.Append(signature.Parameters.Length.ToString(CultureInfo.InvariantCulture));
         builder.AppendLine(");");
@@ -2624,6 +2664,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         public bool Stable { get; }
 
         public string WrapperName => IsStatic ? $"StaticMethod_{MemberName}" : $"InstanceMethod_{MemberName}";
+
+        public string DelegateFunctionHelperName => $"CreateDelegateFunction_{MemberName}";
     }
 
     private readonly struct ExportedPropertyModel

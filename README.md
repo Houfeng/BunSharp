@@ -217,7 +217,7 @@ public sealed class IdentityOptionDemo
 
 ## Delegate Properties
 
-Exported delegate properties are supported and always use stable function-reference semantics.
+Exported delegate properties and delegate method return values are supported and always use stable function-reference semantics.
 
 ```csharp
 public delegate string MessageCallback(string message);
@@ -229,16 +229,30 @@ public sealed class CallbackBridge
 
 	[JSExport(Stable = true)]
 	public MessageCallback? StableCallback { get; set; }
+
+	public MessageCallback GetCallback()
+	{
+		return message => $"default:{message}";
+	}
+
+	[JSExport(Stable = true)]
+	public MessageCallback GetStableCallback()
+	{
+		return message => $"stable:{message}";
+	}
 }
 ```
 
 Rules:
 
 - Delegate properties default to stable behavior even without `Stable = true`
+- Delegate method return values also default to stable behavior even without `Stable = true`
 - Explicit `Stable = true` is allowed
 - Explicit `Stable = false` is rejected by the generator
 
 When JS assigns a function to a delegate property, C# sees a typed delegate wrapper. When C# assigns a delegate to that property, JS reads back a callable function, and repeated reads return the same JS function object until the property changes.
+
+When a method returns a delegate, JS receives a callable function. Repeated calls that return the same managed delegate reuse the same JS function object until that method returns a different delegate for the same exported member.
 
 Typical `JSExport` class: no explicit reference types needed.
 

@@ -151,6 +151,30 @@ public sealed class DelegatePropertyDemo
 }
 
 [JSExport]
+public sealed class DelegateMethodDemo
+{
+  private readonly MessageCallback _callbackA = value => $"left:{value}";
+  private readonly MessageCallback _callbackB = value => $"right:{value}";
+  private readonly MessageCallback _stableCallbackA = value => $"stable-left:{value}";
+  private readonly MessageCallback _stableCallbackB = value => $"stable-right:{value}";
+
+  public DelegateMethodDemo()
+  {
+  }
+
+  public MessageCallback getCallback(bool alternate)
+  {
+    return alternate ? _callbackB : _callbackA;
+  }
+
+  [JSExport(Stable = true)]
+  public MessageCallback getStableCallback(bool alternate)
+  {
+    return alternate ? _stableCallbackB : _stableCallbackA;
+  }
+}
+
+[JSExport]
 public sealed class ThrowingReferenceSetterDemo
 {
   private JSFunctionRef? _callback;
@@ -350,6 +374,40 @@ public sealed class JSExportRegressionTests
   }
 
   [Fact]
+  public void DelegateMethodReturns_DefaultToStableAndReuseJsFunctionsPerManagedDelegate()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      const demo = new DelegateMethodDemo();
+
+      const callback1 = demo.getCallback(false);
+      const callback2 = demo.getCallback(false);
+      const callbackAlt = demo.getCallback(true);
+      const callback3 = demo.getCallback(false);
+
+      const stable1 = demo.getStableCallback(false);
+      const stable2 = demo.getStableCallback(false);
+      const stableAlt = demo.getStableCallback(true);
+      const stable3 = demo.getStableCallback(false);
+
+      return [
+        callback1 === callback2,
+        callback1 !== callbackAlt,
+        callback1 !== callback3,
+        callback1('one'),
+        callbackAlt('two'),
+        stable1 === stable2,
+        stable1 !== stableAlt,
+        stable1 !== stable3,
+        stable3('three')
+      ].join('|');
+    })()");
+
+    Assert.Equal("true|true|true|left:one|right:two|true|true|true|stable-left:three", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
   public void Stable_OnMethodReturnValues_ReusesJsObjectsPerReturnedManagedReference()
   {
     using var env = CreateEnvironment();
@@ -456,6 +514,7 @@ public sealed class JSExportRegressionTests
     env.Context.ExportType<StableIdentityMethodDemo>();
     env.Context.ExportType<ReferenceSemanticsDemo>();
     env.Context.ExportType<DelegatePropertyDemo>();
+    env.Context.ExportType<DelegateMethodDemo>();
     env.Context.ExportType<ThrowingReferenceSetterDemo>();
     env.Context.ExportType<WrapperCacheChild>();
     env.Context.ExportType<WrapperCacheParent>();

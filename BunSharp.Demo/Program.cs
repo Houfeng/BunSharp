@@ -194,6 +194,30 @@ public sealed class DelegatePropertyDemo
 }
 
 [JSExport]
+public sealed class DelegateMethodDemo
+{
+  private readonly DemoCallback _callbackA = value => $"left:{value}";
+  private readonly DemoCallback _callbackB = value => $"right:{value}";
+  private readonly DemoCallback _stableCallbackA = value => $"stable-left:{value}";
+  private readonly DemoCallback _stableCallbackB = value => $"stable-right:{value}";
+
+  public DelegateMethodDemo()
+  {
+  }
+
+  public DemoCallback getCallback(bool alternate)
+  {
+    return alternate ? _callbackB : _callbackA;
+  }
+
+  [JSExport(Stable = true)]
+  public DemoCallback getStableCallback(bool alternate)
+  {
+    return alternate ? _stableCallbackB : _stableCallbackA;
+  }
+}
+
+[JSExport]
 public sealed class ThrowingReferenceDemo
 {
   private JSFunctionRef? _callback;
@@ -356,6 +380,7 @@ public static class Program
     context.ExportType<ArrayDemo>();
     context.ExportType<ReferenceDemo>();
     context.ExportType<DelegatePropertyDemo>();
+    context.ExportType<DelegateMethodDemo>();
     context.ExportType<ThrowingReferenceDemo>();
     context.ExportType<IdentityOptionDemo>();
   }
@@ -393,6 +418,7 @@ public static class Program
     RunArrayValidation(context);
     RunReferenceValidation(context);
     RunDelegatePropertyValidation(context);
+    RunDelegateMethodValidation(context);
     RunReferenceDisposeValidation(context);
     RunReferenceExceptionValidation(context);
     RunStableIdentityOptionValidation(context);
@@ -536,6 +562,37 @@ public static class Program
     })()");
 
     Console.WriteLine($"[Delegate property] {context.ToManagedString(result)}");
+  }
+
+  private static void RunDelegateMethodValidation(BunContext context)
+  {
+    var result = context.Evaluate(@"(() => {
+      const demo = new DelegateMethodDemo();
+
+      const callback1 = demo.getCallback(false);
+      const callback2 = demo.getCallback(false);
+      const callbackAlt = demo.getCallback(true);
+      const callback3 = demo.getCallback(false);
+
+      const stable1 = demo.getStableCallback(false);
+      const stable2 = demo.getStableCallback(false);
+      const stableAlt = demo.getStableCallback(true);
+      const stable3 = demo.getStableCallback(false);
+
+      return [
+        callback1 === callback2,
+        callback1 !== callbackAlt,
+        callback1 !== callback3,
+        callback1('one'),
+        callbackAlt('two'),
+        stable1 === stable2,
+        stable1 !== stableAlt,
+        stable1 !== stable3,
+        stable3('three')
+      ].join('|');
+    })()");
+
+    Console.WriteLine($"[Delegate method] {context.ToManagedString(result)}");
   }
 
   private static void RunReferenceDisposeValidation(BunContext context)
