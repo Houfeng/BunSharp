@@ -7,6 +7,7 @@ public sealed class BunRuntime : IDisposable
 {
     private readonly HashSet<IDisposable> _ownedResources = [];
     private readonly Dictionary<BunValue, BunObjectFinalizerRegistration> _objectFinalizerRegistrations = [];
+    private readonly List<Action> _preDestroyCleanupCallbacks = [];
     private readonly List<Action> _cleanupCallbacks = [];
     private readonly int _threadId;
     private BunCallbackHandle? _eventCallbackHandle;
@@ -183,6 +184,8 @@ public sealed class BunRuntime : IDisposable
             return;
         }
 
+        RunCleanupCallbacks(_preDestroyCleanupCallbacks);
+
         if (Handle != 0)
         {
             BunNative.SetEventCallback(Handle, 0, 0);
@@ -264,6 +267,12 @@ public sealed class BunRuntime : IDisposable
         _cleanupCallbacks.Add(callback);
     }
 
+    internal void RegisterPreDestroyCleanup(Action callback)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _preDestroyCleanupCallbacks.Add(callback);
+    }
+
     internal void VerifyThread()
     {
         if (Environment.CurrentManagedThreadId != _threadId)
@@ -282,6 +291,22 @@ public sealed class BunRuntime : IDisposable
             BunDebuggerMode.Break => BunNativeDebuggerMode.Break,
             _ => throw new ArgumentOutOfRangeException(nameof(debuggerMode), debuggerMode, "Unsupported debugger mode."),
         };
+    }
+
+    private static void RunCleanupCallbacks(List<Action> callbacks)
+    {
+        foreach (var callback in callbacks)
+        {
+            try
+            {
+                callback();
+            }
+            catch
+            {
+            }
+        }
+
+        callbacks.Clear();
     }
 }
 

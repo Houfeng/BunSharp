@@ -77,6 +77,11 @@ public unsafe sealed class BunContext
         return BunNative.Array(Handle, length);
     }
 
+    public JSArrayRef CreateArrayRef(nuint length)
+    {
+        return new JSArrayRef(this, CreateArray(length));
+    }
+
     public BunValue CreateFunction(string name, BunManagedHostCallback callback, int argCount = 0, nint userdata = 0)
     {
         ArgumentNullException.ThrowIfNull(name);
@@ -124,6 +129,11 @@ public unsafe sealed class BunContext
         }
     }
 
+    public JSArrayBufferRef CreateArrayBufferRef(nint data, nuint length, BunManagedFinalizer? finalizer = null, nint userdata = 0)
+    {
+        return new JSArrayBufferRef(this, CreateArrayBuffer(data, length, finalizer, userdata));
+    }
+
     public BunValue CreateTypedArray(BunTypedArrayKind kind, nint data, nuint elementCount, BunManagedFinalizer? finalizer = null, nint userdata = 0)
     {
         VerifyThread();
@@ -148,6 +158,16 @@ public unsafe sealed class BunContext
             handle.Dispose();
             throw;
         }
+    }
+
+    public JSTypedArrayRef CreateTypedArrayRef(BunTypedArrayKind kind, nint data, nuint elementCount, BunManagedFinalizer? finalizer = null, nint userdata = 0)
+    {
+        return new JSTypedArrayRef(this, CreateTypedArray(kind, data, elementCount, finalizer, userdata));
+    }
+
+    public JSBufferRef CreateBufferRef(nint data, nuint length, BunManagedFinalizer? finalizer = null, nint userdata = 0)
+    {
+        return new JSBufferRef(this, CreateTypedArray(BunTypedArrayKind.Uint8Array, data, length, finalizer, userdata));
     }
 
     public bool TryGetArrayBuffer(BunValue value, out BunArrayBufferInfo info)
@@ -509,6 +529,12 @@ public unsafe sealed class BunContext
     {
         ArgumentNullException.ThrowIfNull(callback);
         GetOwningRuntime().RegisterCleanup(callback);
+    }
+
+    internal void RegisterPreDestroyCleanup(Action callback)
+    {
+        ArgumentNullException.ThrowIfNull(callback);
+        GetOwningRuntime().RegisterPreDestroyCleanup(callback);
     }
 
     private void VerifyThread()

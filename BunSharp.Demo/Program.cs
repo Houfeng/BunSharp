@@ -104,6 +104,138 @@ public sealed class ArrayDemo
   public static string[] StaticNames => ["alpha", "beta", "gamma"];
 }
 
+[JSExport]
+public sealed class ReferenceDemo
+{
+  public ReferenceDemo()
+  {
+  }
+
+  public JSFunctionRef? Callback { get; set; }
+
+  public JSArrayRef? Items { get; set; }
+
+  public JSBufferRef? Buffer { get; set; }
+
+  public JSArrayRef? rememberArray(JSArrayRef value)
+  {
+    Items = value;
+    return Items;
+  }
+
+  public JSBufferRef? rememberBuffer(JSBufferRef value)
+  {
+    Buffer = value;
+    return Buffer;
+  }
+
+  public string invokeStoredCallback(string message)
+  {
+    if (Callback is null)
+    {
+      return "missing";
+    }
+
+    Span<BunValue> args = stackalloc BunValue[1];
+    args[0] = Callback.Context.CreateString(message);
+    var result = Callback.Call(BunValue.Undefined, args);
+    return Callback.Context.ToManagedString(result) ?? string.Empty;
+  }
+
+  public int storedArrayLength()
+  {
+    return checked((int)(Items?.Length ?? -1));
+  }
+
+  public int firstBufferByte()
+  {
+    if (Buffer is null || Buffer.ByteLength == 0)
+    {
+      return -1;
+    }
+
+    return Buffer.ToArray()[0];
+  }
+}
+
+[JSExport]
+public sealed class ThrowingReferenceDemo
+{
+  private JSFunctionRef? _callback;
+
+  public ThrowingReferenceDemo()
+  {
+  }
+
+  public JSFunctionRef? Callback
+  {
+    get => _callback;
+    set
+    {
+      if (value is not null)
+      {
+        throw new InvalidOperationException("setter failed");
+      }
+
+      _callback = value;
+    }
+  }
+
+  public string state()
+  {
+    return _callback is null ? "null" : "set";
+  }
+}
+
+[JSExport]
+public sealed class IdentityOptionDemo
+{
+  private static readonly string[] StaticItemsA = ["left"];
+  private static readonly string[] StaticItemsB = ["right"];
+  private readonly string[] _itemsA = ["tag-a", "tag-b"];
+  private readonly string[] _itemsB = ["swap-a", "swap-b"];
+  private readonly byte[] _payloadA = [4, 5, 6];
+  private readonly byte[] _payloadB = [7, 8, 9];
+
+  public IdentityOptionDemo()
+  {
+  }
+
+  [JSExport(Stable = true)]
+  public string[] Items { get; set; } = ["a", "b"];
+
+  [JSExport(Stable = true)]
+  public byte[] Payload { get; set; } = [1, 2, 3];
+
+  public void replaceItems(string[] items)
+  {
+    Items = items;
+  }
+
+  public void replacePayload(byte[] payload)
+  {
+    Payload = payload;
+  }
+
+  [JSExport(Stable = true)]
+  public string[] getItems(bool alternate)
+  {
+    return alternate ? _itemsB : _itemsA;
+  }
+
+  [JSExport(Stable = true)]
+  public byte[] getPayload(bool alternate)
+  {
+    return alternate ? _payloadB : _payloadA;
+  }
+
+  [JSExport(Stable = true)]
+  public static string[] getStaticItems(bool alternate)
+  {
+    return alternate ? StaticItemsB : StaticItemsA;
+  }
+}
+
 public static class Program
 {
 
@@ -187,6 +319,9 @@ public static class Program
     context.ExportType<DemoGreeter>();
     context.ExportType<BenchmarkBridge>();
     context.ExportType<ArrayDemo>();
+    context.ExportType<ReferenceDemo>();
+    context.ExportType<ThrowingReferenceDemo>();
+    context.ExportType<IdentityOptionDemo>();
   }
 
   private static void RunDefaultValidation(BunContext context)
@@ -220,6 +355,11 @@ public static class Program
     Console.WriteLine($"The type of Promise is: {tString}");
 
     RunArrayValidation(context);
+    RunReferenceValidation(context);
+    RunReferenceDisposeValidation(context);
+    RunReferenceExceptionValidation(context);
+    RunStableIdentityOptionValidation(context);
+    RunStableIdentityMethodValidation(context);
     RunBenchmarks(context);
   }
 
@@ -262,6 +402,157 @@ public static class Program
     RunBenchmark(context, "实例方法调用", "instance-method-call.ts");
     RunBenchmark(context, "字符串往返", "string-roundtrip.ts");
     RunBenchmark(context, "byte[] 往返", "byte-array-roundtrip.ts");
+  }
+
+  private static void RunReferenceValidation(BunContext context)
+  {
+    var referenceResult = context.Evaluate(@"(() => {
+      const demo = new ReferenceDemo();
+      const callback = (message) => `callback:${message}`;
+      demo.callback = callback;
+
+      const callback2 = (message) => `callback2:${message}`;
+      demo.callback = callback2;
+      const replacedCallback = demo.invokeStoredCallback('swap');
+      demo.callback = null;
+      const clearedCallback = demo.invokeStoredCallback('missing');
+      demo.callback = callback;
+
+      const items = ['a', 'b', 'c'];
+      const sameItems = demo.rememberArray(items);
+      const items2 = ['z'];
+      demo.items = items2;
+      const replacedItems = demo.items === items2;
+      demo.items = null;
+      const clearedItems = demo.items === null;
+      demo.items = items;
+
+      const buffer = new Uint8Array([7, 8, 9]);
+      demo.buffer = buffer;
+      buffer[0] = 42;
+      const buffer2 = new Uint8Array([5]);
+      demo.buffer = buffer2;
+      buffer2[0] = 11;
+      const replacedBufferByte = demo.firstBufferByte();
+      demo.buffer = null;
+      const clearedBufferByte = demo.firstBufferByte();
+      demo.buffer = buffer;
+
+      return [
+        sameItems === items,
+        demo.items === items,
+        replacedItems,
+        clearedItems,
+        demo.invokeStoredCallback('ok'),
+        replacedCallback,
+        clearedCallback,
+        demo.storedArrayLength(),
+        demo.rememberBuffer(buffer) === buffer,
+        demo.firstBufferByte(),
+        replacedBufferByte,
+        clearedBufferByte
+      ].join('|');
+    })()");
+
+    Console.WriteLine($"[Reference validation] {context.ToManagedString(referenceResult)}");
+  }
+
+  private static void RunReferenceDisposeValidation(BunContext context)
+  {
+    var value = context.Evaluate(@"(() => {
+      const demo = new ReferenceDemo();
+      demo.callback = (message) => `dispose:${message}`;
+      demo.items = ['dispose'];
+      demo.buffer = new Uint8Array([99]);
+      return demo;
+    })()");
+
+    var disposed = BunSharp.Generated.__JSExport_ReferenceDemo.DisposeExportedInstance(context, value);
+    Console.WriteLine($"[Reference dispose] {disposed}");
+  }
+
+  private static void RunReferenceExceptionValidation(BunContext context)
+  {
+    var result = context.Evaluate(@"(() => {
+      const demo = new ThrowingReferenceDemo();
+      try {
+        demo.callback = (message) => message;
+        return `${demo.state()}|no-throw`;
+      } catch (error) {
+        return `${demo.state()}|throw`;
+      }
+    })()");
+
+    Console.WriteLine($"[Reference exception] {context.ToManagedString(result)}");
+  }
+
+  private static void RunStableIdentityOptionValidation(BunContext context)
+  {
+    var result = context.Evaluate(@"(() => {
+      const demo = new IdentityOptionDemo();
+
+      const items1 = demo.items;
+      const items2 = demo.items;
+
+      const payload1 = demo.payload;
+      const payload2 = demo.payload;
+
+      demo.replaceItems(['x', 'y']);
+      const items3 = demo.items;
+
+      demo.replacePayload(new Uint8Array([9, 8]));
+      const payload3 = demo.payload;
+
+      return [
+        items1 === items2,
+        payload1 === payload2,
+        items2 !== items3,
+        payload2 !== payload3,
+        items3.join(','),
+        Array.from(payload3).join(',')
+      ].join('|');
+    })()");
+
+    Console.WriteLine($"[Stable identity option] {context.ToManagedString(result)}");
+  }
+
+  private static void RunStableIdentityMethodValidation(BunContext context)
+  {
+    var result = context.Evaluate(@"(() => {
+      const demo = new IdentityOptionDemo();
+
+      const itemsA1 = demo.getItems(false);
+      const itemsA2 = demo.getItems(false);
+      const itemsB = demo.getItems(true);
+      const itemsA3 = demo.getItems(false);
+
+      const payloadA1 = demo.getPayload(false);
+      const payloadA2 = demo.getPayload(false);
+      const payloadB = demo.getPayload(true);
+      const payloadA3 = demo.getPayload(false);
+
+      const staticA1 = IdentityOptionDemo.getStaticItems(false);
+      const staticA2 = IdentityOptionDemo.getStaticItems(false);
+      const staticB = IdentityOptionDemo.getStaticItems(true);
+      const staticA3 = IdentityOptionDemo.getStaticItems(false);
+
+      return [
+        itemsA1 === itemsA2,
+        itemsA1 !== itemsB,
+        itemsA1 !== itemsA3,
+        payloadA1 === payloadA2,
+        payloadA1 !== payloadB,
+        payloadA1 !== payloadA3,
+        staticA1 === staticA2,
+        staticA1 !== staticB,
+        staticA1 !== staticA3,
+        itemsA3.join(','),
+        Array.from(payloadA3).join(','),
+        staticA3.join(',')
+      ].join('|');
+    })()");
+
+    Console.WriteLine($"[Stable identity method] {context.ToManagedString(result)}");
   }
 
   private static void DrainPendingJobs(BunRuntime runtime)

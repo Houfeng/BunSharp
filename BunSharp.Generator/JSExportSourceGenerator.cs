@@ -15,12 +15,18 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
     private const string JsExportAttributeMetadataName = "BunSharp.JSExportAttribute";
     private const string BunValueMetadataName = "BunSharp.BunValue";
     private const string BunContextMetadataName = "BunSharp.BunContext";
+    private const string JsObjectRefMetadataName = "BunSharp.JSObjectRef";
+    private const string JsFunctionRefMetadataName = "BunSharp.JSFunctionRef";
+    private const string JsArrayRefMetadataName = "BunSharp.JSArrayRef";
+    private const string JsArrayBufferRefMetadataName = "BunSharp.JSArrayBufferRef";
+    private const string JsTypedArrayRefMetadataName = "BunSharp.JSTypedArrayRef";
+    private const string JsBufferRefMetadataName = "BunSharp.JSBufferRef";
     private const string DiagnosticCategory = "BunSharp.JSExport";
 
     private static readonly DiagnosticDescriptor UnsupportedTypeDescriptor = new(
         id: "LBSG001",
         title: "Unsupported export type",
-        messageFormat: "Member '{0}' uses unsupported type '{1}'. Supported types are bool, int, double, string, byte[], T[], BunValue, void, and JS-exported classes in the same assembly.",
+        messageFormat: "Member '{0}' uses unsupported type '{1}'. Supported types are bool, int, double, string, byte[], T[], BunValue, JSObjectRef, JSFunctionRef, JSArrayRef, JSArrayBufferRef, JSTypedArrayRef, JSBufferRef, void, and JS-exported classes in the same assembly.",
         category: DiagnosticCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -57,6 +63,14 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor UnsupportedStableDescriptor = new(
+        id: "LBSG006",
+        title: "Unsupported stable JS identity option",
+        messageFormat: "Member '{0}' cannot use Stable with type '{1}'. Stable is currently supported only on exported byte[] and T[] properties and method return values.",
+        category: DiagnosticCategory,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
     private static readonly SymbolDisplayFormat FullyQualifiedFormat = new(
         globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Included,
         typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
@@ -73,11 +87,19 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         var jsExportAttributeSymbol = compilation.GetTypeByMetadataName(JsExportAttributeMetadataName);
         var bunValueSymbol = compilation.GetTypeByMetadataName(BunValueMetadataName);
         var bunContextSymbol = compilation.GetTypeByMetadataName(BunContextMetadataName);
+        var jsObjectRefSymbol = compilation.GetTypeByMetadataName(JsObjectRefMetadataName);
+        var jsFunctionRefSymbol = compilation.GetTypeByMetadataName(JsFunctionRefMetadataName);
+        var jsArrayRefSymbol = compilation.GetTypeByMetadataName(JsArrayRefMetadataName);
+        var jsArrayBufferRefSymbol = compilation.GetTypeByMetadataName(JsArrayBufferRefMetadataName);
+        var jsTypedArrayRefSymbol = compilation.GetTypeByMetadataName(JsTypedArrayRefMetadataName);
+        var jsBufferRefSymbol = compilation.GetTypeByMetadataName(JsBufferRefMetadataName);
 
-        if (jsExportAttributeSymbol is null || bunValueSymbol is null || bunContextSymbol is null)
+        if (jsExportAttributeSymbol is null || bunValueSymbol is null || bunContextSymbol is null || jsObjectRefSymbol is null || jsFunctionRefSymbol is null || jsArrayRefSymbol is null || jsArrayBufferRefSymbol is null || jsTypedArrayRefSymbol is null || jsBufferRefSymbol is null)
         {
             return;
         }
+
+        var knownTypes = new KnownTypeSymbols(bunValueSymbol, jsObjectRefSymbol, jsFunctionRefSymbol, jsArrayRefSymbol, jsArrayBufferRefSymbol, jsTypedArrayRefSymbol, jsBufferRefSymbol);
 
         var classDeclarations = compilation.SyntaxTrees
             .SelectMany(static tree => tree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>())
@@ -135,7 +157,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         var models = new List<ExportedTypeModel>();
         foreach (var type in candidateTypes)
         {
-            if (!TryBuildTypeModel(context, type, jsExportAttributeSymbol, bunValueSymbol, exportedTypeNames, out var model))
+            if (!TryBuildTypeModel(context, type, jsExportAttributeSymbol, knownTypes, exportedTypeNames, out var model))
             {
                 continue;
             }
@@ -155,7 +177,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         GeneratorExecutionContext context,
         INamedTypeSymbol type,
         INamedTypeSymbol jsExportAttributeSymbol,
-        INamedTypeSymbol bunValueSymbol,
+        KnownTypeSymbols knownTypes,
         ISet<string> exportedTypeNames,
         out ExportedTypeModel model)
     {
@@ -190,7 +212,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         }
 
         var constructor = constructors[0];
-        if (!TryCreateParameters(context, constructor.Parameters, constructor.Name, bunValueSymbol, exportedTypeNames, out var constructorParameters))
+        if (!TryCreateParameters(context, constructor.Parameters, constructor.Name, knownTypes, exportedTypeNames, out var constructorParameters))
         {
             return false;
         }
@@ -212,7 +234,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                         continue;
                     }
 
-                    if (!TryResolveMemberModel(context, type, method, jsExportAttributeSymbol, bunValueSymbol, exportedTypeNames, out var methodModel))
+                    if (!TryResolveMemberModel(context, type, method, jsExportAttributeSymbol, knownTypes, exportedTypeNames, out var methodModel))
                     {
                         continue;
                     }
@@ -264,7 +286,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                         continue;
                     }
 
-                    if (!TryResolvePropertyModel(context, type, property, jsExportAttributeSymbol, bunValueSymbol, exportedTypeNames, out var propertyModel))
+                    if (!TryResolvePropertyModel(context, type, property, jsExportAttributeSymbol, knownTypes, exportedTypeNames, out var propertyModel))
                     {
                         continue;
                     }
@@ -319,7 +341,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         INamedTypeSymbol containingType,
         IMethodSymbol method,
         INamedTypeSymbol jsExportAttributeSymbol,
-        INamedTypeSymbol bunValueSymbol,
+        KnownTypeSymbols knownTypes,
         ISet<string> exportedTypeNames,
         out ExportedMethodModel? model)
     {
@@ -355,13 +377,23 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             return true;
         }
 
-        if (!TryCreateParameters(context, method.Parameters, method.Name, bunValueSymbol, exportedTypeNames, out var parameters))
+        if (!TryCreateParameters(context, method.Parameters, method.Name, knownTypes, exportedTypeNames, out var parameters))
         {
             return false;
         }
 
-        if (!TryCreateTypeRef(context, method.ReturnType, method.Name, bunValueSymbol, exportedTypeNames, allowVoid: true, out var returnType))
+        if (!TryCreateTypeRef(context, method.ReturnType, method.Name, knownTypes, exportedTypeNames, allowVoid: true, out var returnType))
         {
+            return false;
+        }
+
+        if (exportRule.Stable && !returnType.CanUseStableOption)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+            UnsupportedStableDescriptor,
+                method.Locations.FirstOrDefault(),
+                method.Name,
+                method.ReturnType.ToDisplayString()));
             return false;
         }
 
@@ -370,7 +402,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             exportRule.Name ?? ToCamelCase(method.Name),
             method.IsStatic,
             parameters,
-            returnType);
+            returnType,
+            exportRule.Stable);
 
         return true;
     }
@@ -380,7 +413,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         INamedTypeSymbol containingType,
         IPropertySymbol property,
         INamedTypeSymbol jsExportAttributeSymbol,
-        INamedTypeSymbol bunValueSymbol,
+        KnownTypeSymbols knownTypes,
         ISet<string> exportedTypeNames,
         out ExportedPropertyModel? model)
     {
@@ -403,8 +436,18 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             return true;
         }
 
-        if (!TryCreateTypeRef(context, property.Type, property.Name, bunValueSymbol, exportedTypeNames, allowVoid: false, out var propertyType))
+        if (!TryCreateTypeRef(context, property.Type, property.Name, knownTypes, exportedTypeNames, allowVoid: false, out var propertyType))
         {
+            return false;
+        }
+
+        if (exportRule.Stable && !propertyType.CanUseStableOption)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+            UnsupportedStableDescriptor,
+                property.Locations.FirstOrDefault(),
+                property.Name,
+                property.Type.ToDisplayString()));
             return false;
         }
 
@@ -414,7 +457,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             property.IsStatic,
             hasGetter,
             hasSetter,
-            propertyType);
+            propertyType,
+            exportRule.Stable);
 
         return true;
     }
@@ -423,7 +467,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         GeneratorExecutionContext context,
         ImmutableArray<IParameterSymbol> parameters,
         string memberName,
-        INamedTypeSymbol bunValueSymbol,
+        KnownTypeSymbols knownTypes,
         ISet<string> exportedTypeNames,
         out ImmutableArray<ParameterModel> result)
     {
@@ -441,7 +485,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 return false;
             }
 
-            if (!TryCreateTypeRef(context, parameter.Type, memberName, bunValueSymbol, exportedTypeNames, allowVoid: false, out var typeRef))
+            if (!TryCreateTypeRef(context, parameter.Type, memberName, knownTypes, exportedTypeNames, allowVoid: false, out var typeRef))
             {
                 result = default;
                 return false;
@@ -458,7 +502,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         GeneratorExecutionContext context,
         ITypeSymbol type,
         string memberName,
-        INamedTypeSymbol bunValueSymbol,
+        KnownTypeSymbols knownTypes,
         ISet<string> exportedTypeNames,
         bool allowVoid,
         out TypeRefModel typeRef)
@@ -491,7 +535,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
         if (type is IArrayTypeSymbol generalArrayType && generalArrayType.Rank == 1)
         {
-            if (!TryCreateTypeRef(context, generalArrayType.ElementType, memberName, bunValueSymbol, exportedTypeNames, allowVoid: false, out var elementTypeRef))
+            if (!TryCreateTypeRef(context, generalArrayType.ElementType, memberName, knownTypes, exportedTypeNames, allowVoid: false, out var elementTypeRef))
             {
                 typeRef = default!;
                 return false;
@@ -501,7 +545,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             return true;
         }
 
-        if (SymbolEqualityComparer.Default.Equals(type, bunValueSymbol))
+        if (SymbolEqualityComparer.Default.Equals(type, knownTypes.BunValueSymbol))
         {
             typeRef = new TypeRefModel(ExportValueKind.BunValue, fullyQualifiedName, null, isNullableReferenceType: false);
             return true;
@@ -509,6 +553,42 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
         if (type is INamedTypeSymbol namedType)
         {
+            if (SymbolEqualityComparer.Default.Equals(namedType, knownTypes.JSObjectRefSymbol))
+            {
+                typeRef = new TypeRefModel(ExportValueKind.JSObjectRef, fullyQualifiedName, null, isNullableReferenceType: type.NullableAnnotation == NullableAnnotation.Annotated);
+                return true;
+            }
+
+            if (SymbolEqualityComparer.Default.Equals(namedType, knownTypes.JSFunctionRefSymbol))
+            {
+                typeRef = new TypeRefModel(ExportValueKind.JSFunctionRef, fullyQualifiedName, null, isNullableReferenceType: type.NullableAnnotation == NullableAnnotation.Annotated);
+                return true;
+            }
+
+            if (SymbolEqualityComparer.Default.Equals(namedType, knownTypes.JSArrayRefSymbol))
+            {
+                typeRef = new TypeRefModel(ExportValueKind.JSArrayRef, fullyQualifiedName, null, isNullableReferenceType: type.NullableAnnotation == NullableAnnotation.Annotated);
+                return true;
+            }
+
+            if (SymbolEqualityComparer.Default.Equals(namedType, knownTypes.JSArrayBufferRefSymbol))
+            {
+                typeRef = new TypeRefModel(ExportValueKind.JSArrayBufferRef, fullyQualifiedName, null, isNullableReferenceType: type.NullableAnnotation == NullableAnnotation.Annotated);
+                return true;
+            }
+
+            if (SymbolEqualityComparer.Default.Equals(namedType, knownTypes.JSTypedArrayRefSymbol))
+            {
+                typeRef = new TypeRefModel(ExportValueKind.JSTypedArrayRef, fullyQualifiedName, null, isNullableReferenceType: type.NullableAnnotation == NullableAnnotation.Annotated);
+                return true;
+            }
+
+            if (SymbolEqualityComparer.Default.Equals(namedType, knownTypes.JSBufferRefSymbol))
+            {
+                typeRef = new TypeRefModel(ExportValueKind.JSBufferRef, fullyQualifiedName, null, isNullableReferenceType: type.NullableAnnotation == NullableAnnotation.Annotated);
+                return true;
+            }
+
             var exportTypeName = namedType.ToDisplayString(FullyQualifiedFormat);
             if (exportedTypeNames.Contains(exportTypeName))
             {
@@ -536,27 +616,38 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 continue;
             }
 
+            var stable = false;
+            foreach (var namedArgument in attribute.NamedArguments)
+            {
+                if (namedArgument.Key == "Stable" &&
+                    namedArgument.Value.Kind == TypedConstantKind.Primitive &&
+                    namedArgument.Value.Type?.SpecialType == SpecialType.System_Boolean)
+                {
+                    stable |= namedArgument.Value.Value is true;
+                }
+            }
+
             if (attribute.ConstructorArguments.Length == 0)
             {
-                rule = new ExportRule(true, null);
+                rule = new ExportRule(true, null, stable);
                 return true;
             }
 
             var argument = attribute.ConstructorArguments[0];
             if (argument.Kind == TypedConstantKind.Primitive && argument.Type?.SpecialType == SpecialType.System_Boolean)
             {
-                rule = new ExportRule(argument.Value is true, null);
+                rule = new ExportRule(argument.Value is true, null, stable);
                 return true;
             }
 
             if (argument.Kind == TypedConstantKind.Primitive && argument.Type?.SpecialType == SpecialType.System_String)
             {
-                rule = new ExportRule(true, (string?)argument.Value);
+                rule = new ExportRule(true, (string?)argument.Value, stable);
                 return true;
             }
         }
 
-        rule = new ExportRule(true, null);
+        rule = new ExportRule(true, null, stable: false);
         return !HasAttribute(symbol, jsExportAttributeSymbol) || rule.Enabled;
     }
 
@@ -645,6 +736,12 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             ExportValueKind.String => "String",
             ExportValueKind.ByteArray => "ByteArray",
             ExportValueKind.BunValue => "BunValue",
+            ExportValueKind.JSObjectRef => "JSObjectRef",
+            ExportValueKind.JSFunctionRef => "JSFunctionRef",
+            ExportValueKind.JSArrayRef => "JSArrayRef",
+            ExportValueKind.JSArrayBufferRef => "JSArrayBufferRef",
+            ExportValueKind.JSTypedArrayRef => "JSTypedArrayRef",
+            ExportValueKind.JSBufferRef => "JSBufferRef",
             ExportValueKind.ExportedObject => elementType.HelperId!,
             ExportValueKind.Array => "Array_" + GetArrayElementTypeSuffix(elementType.ElementType!),
             _ => throw new InvalidOperationException($"Unsupported array element kind {elementType.Kind}."),
@@ -678,6 +775,22 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        if (!result)");
         builder.AppendLine("        {");
         builder.AppendLine("            throw new InvalidOperationException($\"Failed to set JS array element at index {index}.\");");
+        builder.AppendLine("        }");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    public static void DisposeReplacedReference<T>(T? current, T? next) where T : class, IDisposable");
+        builder.AppendLine("    {");
+        builder.AppendLine("        if (current is not null && !ReferenceEquals(current, next))");
+        builder.AppendLine("        {");
+        builder.AppendLine("            current.Dispose();");
+        builder.AppendLine("        }");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    public static void DisposeFailedReferenceAssignment<T>(T? current, T? attempted) where T : class, IDisposable");
+        builder.AppendLine("    {");
+        builder.AppendLine("        if (attempted is not null && !ReferenceEquals(current, attempted))");
+        builder.AppendLine("        {");
+        builder.AppendLine("            attempted.Dispose();");
         builder.AppendLine("        }");
         builder.AppendLine("    }");
         builder.AppendLine();
@@ -736,6 +849,66 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        }");
         builder.AppendLine();
         builder.AppendLine("        throw new InvalidOperationException(\"Expected Uint8Array or ArrayBuffer for byte[] export.\");");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    public static global::BunSharp.JSObjectRef? ReadJSObjectRef(global::BunSharp.BunContext context, global::BunSharp.BunValue value)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        if (context.IsNull(value) || context.IsUndefined(value))");
+        builder.AppendLine("        {");
+        builder.AppendLine("            return null;");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        return new global::BunSharp.JSObjectRef(context, value);");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    public static global::BunSharp.JSFunctionRef? ReadJSFunctionRef(global::BunSharp.BunContext context, global::BunSharp.BunValue value)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        if (context.IsNull(value) || context.IsUndefined(value))");
+        builder.AppendLine("        {");
+        builder.AppendLine("            return null;");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        return new global::BunSharp.JSFunctionRef(context, value);");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    public static global::BunSharp.JSArrayRef? ReadJSArrayRef(global::BunSharp.BunContext context, global::BunSharp.BunValue value)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        if (context.IsNull(value) || context.IsUndefined(value))");
+        builder.AppendLine("        {");
+        builder.AppendLine("            return null;");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        return new global::BunSharp.JSArrayRef(context, value);");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    public static global::BunSharp.JSArrayBufferRef? ReadJSArrayBufferRef(global::BunSharp.BunContext context, global::BunSharp.BunValue value)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        if (context.IsNull(value) || context.IsUndefined(value))");
+        builder.AppendLine("        {");
+        builder.AppendLine("            return null;");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        return new global::BunSharp.JSArrayBufferRef(context, value);");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    public static global::BunSharp.JSTypedArrayRef? ReadJSTypedArrayRef(global::BunSharp.BunContext context, global::BunSharp.BunValue value)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        if (context.IsNull(value) || context.IsUndefined(value))");
+        builder.AppendLine("        {");
+        builder.AppendLine("            return null;");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        return new global::BunSharp.JSTypedArrayRef(context, value);");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    public static global::BunSharp.JSBufferRef? ReadJSBufferRef(global::BunSharp.BunContext context, global::BunSharp.BunValue value)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        if (context.IsNull(value) || context.IsUndefined(value))");
+        builder.AppendLine("        {");
+        builder.AppendLine("            return null;");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        return new global::BunSharp.JSBufferRef(context, value);");
         builder.AppendLine("    }");
         builder.AppendLine();
         builder.AppendLine("    private static void ReleaseUnmanagedBuffer(nint userdata)");
@@ -811,12 +984,18 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             ExportValueKind.String => $"ReadString({ctxExpr}, {valueExpr})",
             ExportValueKind.ByteArray => $"ReadByteArray({ctxExpr}, {valueExpr})",
             ExportValueKind.BunValue => valueExpr,
+            ExportValueKind.JSObjectRef => $"ReadJSObjectRef({ctxExpr}, {valueExpr})",
+            ExportValueKind.JSFunctionRef => $"ReadJSFunctionRef({ctxExpr}, {valueExpr})",
+            ExportValueKind.JSArrayRef => $"ReadJSArrayRef({ctxExpr}, {valueExpr})",
+            ExportValueKind.JSArrayBufferRef => $"ReadJSArrayBufferRef({ctxExpr}, {valueExpr})",
+            ExportValueKind.JSTypedArrayRef => $"ReadJSTypedArrayRef({ctxExpr}, {valueExpr})",
+            ExportValueKind.JSBufferRef => $"ReadJSBufferRef({ctxExpr}, {valueExpr})",
             ExportValueKind.ExportedObject => $"{elementType.HelperId}.UnwrapManaged({ctxExpr}, {valueExpr})",
             ExportValueKind.Array => $"{GetArrayReadHelperName(elementType)}({ctxExpr}, {valueExpr})",
             _ => throw new InvalidOperationException($"Unsupported element kind {elementType.Kind}.")
         };
         // Null-forgiving for reference-typed elements so the helper returns T[] not T?[]
-        if (elementType.Kind is ExportValueKind.String or ExportValueKind.ByteArray or ExportValueKind.ExportedObject or ExportValueKind.Array)
+        if (elementType.RequiresNullCheckedReferenceHandling)
             expr += "!";
         return expr;
     }
@@ -831,6 +1010,12 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             ExportValueKind.String => $"{valueExpr} is null ? global::BunSharp.BunValue.Null : {ctxExpr}.CreateString({valueExpr})",
             ExportValueKind.ByteArray => $"CreateByteArray({ctxExpr}, {valueExpr})",
             ExportValueKind.BunValue => valueExpr,
+            ExportValueKind.JSObjectRef => $"{valueExpr} is null ? global::BunSharp.BunValue.Null : {valueExpr}.Value",
+            ExportValueKind.JSFunctionRef => $"{valueExpr} is null ? global::BunSharp.BunValue.Null : {valueExpr}.Value",
+            ExportValueKind.JSArrayRef => $"{valueExpr} is null ? global::BunSharp.BunValue.Null : {valueExpr}.Value",
+            ExportValueKind.JSArrayBufferRef => $"{valueExpr} is null ? global::BunSharp.BunValue.Null : {valueExpr}.Value",
+            ExportValueKind.JSTypedArrayRef => $"{valueExpr} is null ? global::BunSharp.BunValue.Null : {valueExpr}.Value",
+            ExportValueKind.JSBufferRef => $"{valueExpr} is null ? global::BunSharp.BunValue.Null : {valueExpr}.Value",
             ExportValueKind.ExportedObject => $"{elementType.HelperId}.WrapManaged({ctxExpr}, {valueExpr})",
             ExportValueKind.Array => $"{GetArrayWriteHelperName(elementType)}({ctxExpr}, {valueExpr})",
             _ => throw new InvalidOperationException($"Unsupported element kind {elementType.Kind}.")
@@ -900,15 +1085,48 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.Append(model.Id);
         builder.AppendLine();
         builder.AppendLine("{");
+        builder.AppendLine("    private sealed class ManagedWrapperEntry");
+        builder.AppendLine("    {");
+        builder.AppendLine("        public ManagedWrapperEntry(object instance, nint handle, global::BunSharp.BunValue value)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            Instance = instance;");
+        builder.AppendLine("            Handle = handle;");
+        builder.AppendLine("            Value = value;");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        public object Instance { get; }");
+        builder.AppendLine();
+        builder.AppendLine("        public nint Handle { get; }");
+        builder.AppendLine();
+        builder.AppendLine("        public global::BunSharp.BunValue Value { get; }");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    private sealed class StableIdentityEntry");
+        builder.AppendLine("    {");
+        builder.AppendLine("        public StableIdentityEntry(object source, global::BunSharp.BunValue value)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            Source = source;");
+        builder.AppendLine("            Value = value;");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        public object Source { get; }");
+        builder.AppendLine();
+        builder.AppendLine("        public global::BunSharp.BunValue Value { get; }");
+        builder.AppendLine("    }");
+        builder.AppendLine();
         builder.AppendLine("    private sealed class RegistrationState");
         builder.AppendLine("    {");
         builder.AppendLine("        private readonly HashSet<nint> _trackedHandles = new();");
+        builder.AppendLine("        private readonly Dictionary<object, ManagedWrapperEntry> _wrappersByInstance = new(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
+        builder.AppendLine("        private readonly Dictionary<nint, ManagedWrapperEntry> _wrappersByHandle = new();");
+        builder.AppendLine("        private readonly Dictionary<nint, Dictionary<string, Dictionary<object, StableIdentityEntry>>> _stableIdentityEntries = new();");
         builder.AppendLine();
-        builder.AppendLine("        public RegistrationState(global::BunSharp.BunClass @class, global::BunSharp.BunValue constructor, global::BunSharp.BunClassPersistentFinalizer releaseHandleFinalizer)");
+        builder.AppendLine("        public RegistrationState(global::BunSharp.BunClass @class, global::BunSharp.BunValue constructor, global::BunSharp.BunClassPersistentFinalizer releaseHandleFinalizer, nint contextHandle)");
         builder.AppendLine("        {");
         builder.AppendLine("            Class = @class;");
         builder.AppendLine("            Constructor = constructor;");
         builder.AppendLine("            ReleaseHandleFinalizer = releaseHandleFinalizer;");
+        builder.AppendLine("            ContextHandle = contextHandle;");
         builder.AppendLine("        }");
         builder.AppendLine();
         builder.AppendLine("        public global::BunSharp.BunClass Class { get; }");
@@ -917,31 +1135,167 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine();
         builder.AppendLine("        public global::BunSharp.BunClassPersistentFinalizer ReleaseHandleFinalizer { get; }");
         builder.AppendLine();
+        builder.AppendLine("        public nint ContextHandle { get; }");
+        builder.AppendLine();
+        builder.AppendLine("        public bool TryGetWrapper(object instance, out global::BunSharp.BunValue value)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            lock (_trackedHandles)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                if (_wrappersByInstance.TryGetValue(instance, out var entry))");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    value = entry.Value;");
+        builder.AppendLine("                    return true;");
+        builder.AppendLine("                }");
+        builder.AppendLine("            }");
+        builder.AppendLine();
+        builder.AppendLine("            value = default;");
+        builder.AppendLine("            return false;");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        public void TrackWrapper(object instance, nint handle, global::BunSharp.BunValue value)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            lock (_trackedHandles)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                _trackedHandles.Add(handle);");
+        builder.AppendLine("                var entry = new ManagedWrapperEntry(instance, handle, value);");
+        builder.AppendLine("                _wrappersByInstance[instance] = entry;");
+        builder.AppendLine("                _wrappersByHandle[handle] = entry;");
+        builder.AppendLine("            }");
+        builder.AppendLine("        }");
+        builder.AppendLine();
         builder.AppendLine("        public void TrackHandle(nint handle)");
         builder.AppendLine("        {");
         builder.AppendLine("            lock (_trackedHandles) _trackedHandles.Add(handle);");
         builder.AppendLine("        }");
         builder.AppendLine();
+        builder.AppendLine("        public bool TryGetStableIdentityValue(nint handle, string memberName, object source, out global::BunSharp.BunValue value)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            lock (_trackedHandles)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                if (_stableIdentityEntries.TryGetValue(handle, out var members) && members.TryGetValue(memberName, out var sources) && sources.TryGetValue(source, out var entry))");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    value = entry.Value;");
+        builder.AppendLine("                    return true;");
+        builder.AppendLine("                }");
+        builder.AppendLine("            }");
+        builder.AppendLine();
+        builder.AppendLine("            value = default;");
+        builder.AppendLine("            return false;");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        public void CacheStableIdentityValue(nint handle, string memberName, object source, global::BunSharp.BunValue value)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            lock (_trackedHandles)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                if (!_stableIdentityEntries.TryGetValue(handle, out var members))");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    members = new Dictionary<string, Dictionary<object, StableIdentityEntry>>(StringComparer.Ordinal);");
+        builder.AppendLine("                    _stableIdentityEntries[handle] = members;");
+        builder.AppendLine("                }");
+        builder.AppendLine("                if (!members.TryGetValue(memberName, out var sources))");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    sources = new Dictionary<object, StableIdentityEntry>(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
+        builder.AppendLine("                    members[memberName] = sources;");
+        builder.AppendLine("                }");
+        builder.AppendLine("                if (sources.TryGetValue(source, out var existing))");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, existing.Value);");
+        builder.AppendLine("                }");
+        builder.AppendLine("                global::BunSharp.Interop.BunNative.Protect(ContextHandle, value);");
+        builder.AppendLine("                sources[source] = new StableIdentityEntry(source, value);");
+        builder.AppendLine("            }");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        public void ClearStableIdentityValue(nint handle, string memberName)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            lock (_trackedHandles)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                ClearStableIdentityValueCore(handle, memberName);");
+        builder.AppendLine("            }");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        public void ReleaseStableIdentityValuesForHandle(nint handle)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            lock (_trackedHandles)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                if (!_stableIdentityEntries.Remove(handle, out var members))");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    return;");
+        builder.AppendLine("                }");
+        builder.AppendLine();
+        builder.AppendLine("                foreach (var sources in members.Values)");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    foreach (var entry in sources.Values)");
+        builder.AppendLine("                    {");
+        builder.AppendLine("                        global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
+        builder.AppendLine("                    }");
+        builder.AppendLine("                }");
+        builder.AppendLine("            }");
+        builder.AppendLine("        }");
+        builder.AppendLine();
         builder.AppendLine("        public bool UntrackHandle(nint handle)");
         builder.AppendLine("        {");
-        builder.AppendLine("            lock (_trackedHandles) return _trackedHandles.Remove(handle);");
+        builder.AppendLine("            lock (_trackedHandles)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                if (!_trackedHandles.Remove(handle))");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    return false;");
+        builder.AppendLine("                }");
+        builder.AppendLine();
+        builder.AppendLine("                if (_wrappersByHandle.Remove(handle, out var entry))");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    _wrappersByInstance.Remove(entry.Instance);");
+        builder.AppendLine("                }");
+        builder.AppendLine();
+        builder.AppendLine("                return true;");
+        builder.AppendLine("            }");
         builder.AppendLine("        }");
         builder.AppendLine();
         builder.AppendLine("        public void ReleaseTrackedHandles()");
         builder.AppendLine("        {");
         builder.AppendLine("            lock (_trackedHandles)");
         builder.AppendLine("            {");
+        builder.AppendLine("                foreach (var members in _stableIdentityEntries.Values)");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    foreach (var sources in members.Values)");
+        builder.AppendLine("                    {");
+        builder.AppendLine("                        foreach (var entry in sources.Values)");
+        builder.AppendLine("                        {");
+        builder.AppendLine("                            global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
+        builder.AppendLine("                        }");
+        builder.AppendLine("                    }");
+        builder.AppendLine("                }");
         builder.AppendLine("                foreach (var h in _trackedHandles)");
         builder.AppendLine("                {");
         builder.AppendLine("                    GCHandle.FromIntPtr(h).Free();");
         builder.AppendLine("                }");
         builder.AppendLine("                _trackedHandles.Clear();");
+        builder.AppendLine("                _stableIdentityEntries.Clear();");
+        builder.AppendLine("                _wrappersByHandle.Clear();");
+        builder.AppendLine("                _wrappersByInstance.Clear();");
         builder.AppendLine("            }");
         builder.AppendLine("        }");
         builder.AppendLine();
         builder.AppendLine("        public void DisposeReleaseHandleFinalizer()");
         builder.AppendLine("        {");
         builder.AppendLine("            ReleaseHandleFinalizer.Dispose();");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        private void ClearStableIdentityValueCore(nint handle, string memberName)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            if (!_stableIdentityEntries.TryGetValue(handle, out var members) || !members.Remove(memberName, out var sources))");
+        builder.AppendLine("            {");
+        builder.AppendLine("                return;");
+        builder.AppendLine("            }");
+        builder.AppendLine();
+        builder.AppendLine("            foreach (var entry in sources.Values)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
+        builder.AppendLine("            }");
+        builder.AppendLine("            if (members.Count == 0)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                _stableIdentityEntries.Remove(handle);");
+        builder.AppendLine("            }");
         builder.AppendLine("        }");
         builder.AppendLine("    }");
         builder.AppendLine();
@@ -1068,7 +1422,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("            }");
         builder.AppendLine();
         builder.AppendLine("            var releaseHandleFinalizer = @class.CreatePersistentFinalizer(ReleaseHandle, contextHandle);");
-        builder.AppendLine("            var registration = new RegistrationState(@class, constructor, releaseHandleFinalizer);");
+        builder.AppendLine("            var registration = new RegistrationState(@class, constructor, releaseHandleFinalizer, contextHandle);");
         builder.AppendLine("            Registrations.Add(contextHandle, registration);");
         builder.AppendLine("            context.RegisterCleanup(() =>");
         builder.AppendLine("            {");
@@ -1076,6 +1430,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("                {");
         builder.AppendLine("                    if (Registrations.Remove(contextHandle, out var removed))");
         builder.AppendLine("                    {");
+        builder.AppendLine("                        ReleaseStaticReferences();");
         builder.AppendLine("                        removed.ReleaseTrackedHandles();");
         builder.AppendLine("                        removed.DisposeReleaseHandleFinalizer();");
         builder.AppendLine("                    }");
@@ -1132,12 +1487,17 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        }");
         builder.AppendLine();
         builder.AppendLine("        var registration = GetOrCreate(context, publishGlobal: false);");
+        builder.AppendLine("        if (registration.TryGetWrapper(instance, out var cached))");
+        builder.AppendLine("        {");
+        builder.AppendLine("            return cached;");
+        builder.AppendLine("        }");
+        builder.AppendLine();
         builder.AppendLine("        var handle = GCHandle.Alloc(instance, GCHandleType.Normal);");
         builder.AppendLine("        var handlePtr = GCHandle.ToIntPtr(handle);");
         builder.AppendLine("        try");
         builder.AppendLine("        {");
         builder.AppendLine("            var value = registration.Class.CreateInstance(handlePtr, registration.ReleaseHandleFinalizer);");
-        builder.AppendLine("            registration.TrackHandle(handlePtr);");
+        builder.AppendLine("            registration.TrackWrapper(instance, handlePtr, value);");
         builder.AppendLine("            return value;");
         builder.AppendLine("        }");
         builder.AppendLine("        catch");
@@ -1171,25 +1531,50 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("?)handle.Target;");
         builder.AppendLine("    }");
         builder.AppendLine();
+        builder.AppendLine("    internal static bool DisposeExportedInstance(global::BunSharp.BunContext context, global::BunSharp.BunValue value)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        if (context.IsNull(value) || context.IsUndefined(value))");
+        builder.AppendLine("        {");
+        builder.AppendLine("            return false;");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        var registration = GetOrCreate(context, publishGlobal: false);");
+        builder.AppendLine("        return registration.Class.DisposeInstance(value);");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        AppendReleaseReferenceMethods(builder, model);
+        builder.AppendLine();
         builder.AppendLine("    private static void ReleaseHandle(nint nativePtr, nint userdata)");
         builder.AppendLine("    {");
         builder.AppendLine("        if (nativePtr == 0) return;");
         builder.AppendLine("        if (TryGetCachedRegistration(userdata, out var cached) && cached.UntrackHandle(nativePtr))");
         builder.AppendLine("        {");
-        builder.AppendLine("            GCHandle.FromIntPtr(nativePtr).Free();");
+        builder.AppendLine("            cached.ReleaseStableIdentityValuesForHandle(nativePtr);");
+        builder.AppendLine("            var cachedHandle = GCHandle.FromIntPtr(nativePtr);");
+        builder.Append("            ReleaseInstanceReferences((");
+        builder.Append(model.FullyQualifiedTypeName);
+        builder.AppendLine("?)cachedHandle.Target);");
+        builder.AppendLine("            cachedHandle.Free();");
         builder.AppendLine("            return;");
         builder.AppendLine("        }");
         builder.AppendLine();
+        builder.AppendLine("        RegistrationState reg;");
         builder.AppendLine("        lock (SyncRoot)");
         builder.AppendLine("        {");
-        builder.AppendLine("            if (!Registrations.TryGetValue(userdata, out var reg) || !reg.UntrackHandle(nativePtr))");
+        builder.AppendLine("            if (!Registrations.TryGetValue(userdata, out var existing) || !existing.UntrackHandle(nativePtr))");
         builder.AppendLine("            {");
         builder.AppendLine("                return;");
         builder.AppendLine("            }");
         builder.AppendLine();
-        builder.AppendLine("            CacheRegistration(userdata, reg);");
+        builder.AppendLine("            CacheRegistration(userdata, existing);");
+        builder.AppendLine("            reg = existing;");
         builder.AppendLine("        }");
-        builder.AppendLine("        GCHandle.FromIntPtr(nativePtr).Free();");
+        builder.AppendLine("        reg.ReleaseStableIdentityValuesForHandle(nativePtr);");
+        builder.AppendLine("        var handle = GCHandle.FromIntPtr(nativePtr);");
+        builder.Append("        ReleaseInstanceReferences((");
+        builder.Append(model.FullyQualifiedTypeName);
+        builder.AppendLine("?)handle.Target);");
+        builder.AppendLine("        handle.Free();");
         builder.AppendLine("    }");
         builder.AppendLine();
 
@@ -1217,6 +1602,69 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine();
     }
 
+    private static void AppendReleaseReferenceMethods(StringBuilder builder, ExportedTypeModel model)
+    {
+        builder.Append("    private static void ReleaseInstanceReferences(");
+        builder.Append(model.FullyQualifiedTypeName);
+        builder.AppendLine("? target)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        if (target is null)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            return;");
+        builder.AppendLine("        }");
+
+        foreach (var property in model.InstanceProperties.Where(static property => property.PropertyType.ShouldDisposePreviousValueOnReplacement))
+        {
+            builder.Append("        if (target.");
+            builder.Append(property.MemberName);
+            builder.AppendLine(" is not null)");
+            builder.AppendLine("        {");
+            builder.Append("            var value = target.");
+            builder.Append(property.MemberName);
+            builder.AppendLine(";");
+            if (property.HasSetter)
+            {
+                builder.Append("            target.");
+                builder.Append(property.MemberName);
+                builder.AppendLine(" = default!;");
+            }
+            builder.AppendLine("            value.Dispose();");
+            builder.AppendLine("        }");
+        }
+
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    private static void ReleaseStaticReferences()");
+        builder.AppendLine("    {");
+
+        foreach (var property in model.StaticProperties.Where(static property => property.PropertyType.ShouldDisposePreviousValueOnReplacement))
+        {
+            builder.Append("        if (");
+            builder.Append(model.FullyQualifiedTypeName);
+            builder.Append('.');
+            builder.Append(property.MemberName);
+            builder.AppendLine(" is not null)");
+            builder.AppendLine("        {");
+            builder.Append("            var value = ");
+            builder.Append(model.FullyQualifiedTypeName);
+            builder.Append('.');
+            builder.Append(property.MemberName);
+            builder.AppendLine(";");
+            if (property.HasSetter)
+            {
+                builder.Append("            ");
+                builder.Append(model.FullyQualifiedTypeName);
+                builder.Append('.');
+                builder.Append(property.MemberName);
+                builder.AppendLine(" = default!;");
+            }
+            builder.AppendLine("            value.Dispose();");
+            builder.AppendLine("        }");
+        }
+
+        builder.AppendLine("    }");
+    }
+
     private static void AppendInstanceMethod(StringBuilder builder, ExportedTypeModel model, ExportedMethodModel method)
     {
         builder.Append("    private static global::BunSharp.BunValue ");
@@ -1234,7 +1682,39 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.Append(model.FullyQualifiedTypeName);
         builder.AppendLine(")GCHandle.FromIntPtr(nativePtr).Target!;");
         AppendParameterReads(builder, method.Parameters, "        ");
-        AppendInvocation(builder, method.ReturnType, $"target.{method.MemberName}({string.Join(", ", method.Parameters.Select(static parameter => parameter.LocalName))})", "        ");
+        if (method.Stable)
+        {
+            builder.Append("        var result = target.");
+            builder.Append(method.MemberName);
+            builder.Append('(');
+            builder.Append(string.Join(", ", method.Parameters.Select(static parameter => parameter.LocalName)));
+            builder.AppendLine(");");
+            builder.AppendLine("        if (result is null)");
+            builder.AppendLine("        {");
+            builder.AppendLine("            return global::BunSharp.BunValue.Null;");
+            builder.AppendLine("        }");
+            builder.AppendLine("        var registration = GetOrCreate(context, publishGlobal: false);");
+            builder.Append("        if (registration.TryGetStableIdentityValue(nativePtr, ");
+            builder.Append(CSharpLiteral(method.MemberName));
+            builder.AppendLine(", result, out var cached))");
+            builder.AppendLine("        {");
+            builder.AppendLine("            return cached;");
+            builder.AppendLine("        }");
+            builder.Append("        var value = ");
+            builder.Append(ConvertToBunValue(method.ReturnType, "result", "context"));
+            builder.AppendLine(";");
+            builder.Append("        registration.ClearStableIdentityValue(nativePtr, ");
+            builder.Append(CSharpLiteral(method.MemberName));
+            builder.AppendLine(");");
+            builder.Append("        registration.CacheStableIdentityValue(nativePtr, ");
+            builder.Append(CSharpLiteral(method.MemberName));
+            builder.AppendLine(", result, value);");
+            builder.AppendLine("        return value;");
+        }
+        else
+        {
+            AppendInvocation(builder, method.ReturnType, $"target.{method.MemberName}({string.Join(", ", method.Parameters.Select(static parameter => parameter.LocalName))})", "        ");
+        }
         builder.AppendLine("    }");
         builder.AppendLine();
     }
@@ -1250,7 +1730,40 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.Append("        var target = (");
             builder.Append(model.FullyQualifiedTypeName);
             builder.AppendLine(")GCHandle.FromIntPtr(nativePtr).Target!;");
-            AppendInvocation(builder, property.PropertyType, $"target.{property.MemberName}", "        ");
+            if (property.Stable)
+            {
+                builder.Append("        var source = target.");
+                builder.Append(property.MemberName);
+                builder.AppendLine(";");
+                builder.AppendLine("        var registration = GetOrCreate(context, publishGlobal: false);");
+                builder.AppendLine("        if (source is null)");
+                builder.AppendLine("        {");
+                builder.Append("            registration.ClearStableIdentityValue(nativePtr, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(");");
+                builder.AppendLine("            return global::BunSharp.BunValue.Null;");
+                builder.AppendLine("        }");
+                builder.Append("        if (registration.TryGetStableIdentityValue(nativePtr, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(", source, out var cached))");
+                builder.AppendLine("        {");
+                builder.AppendLine("            return cached;");
+                builder.AppendLine("        }");
+                builder.Append("        var result = ");
+                builder.Append(ConvertToBunValue(property.PropertyType, "source", "context"));
+                builder.AppendLine(";");
+                builder.Append("        registration.ClearStableIdentityValue(nativePtr, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(");");
+                builder.Append("        registration.CacheStableIdentityValue(nativePtr, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(", source, result);");
+                builder.AppendLine("        return result;");
+            }
+            else
+            {
+                AppendInvocation(builder, property.PropertyType, $"target.{property.MemberName}", "        ");
+            }
             builder.AppendLine("    }");
             builder.AppendLine();
         }
@@ -1264,11 +1777,54 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.Append("        var target = (");
             builder.Append(model.FullyQualifiedTypeName);
             builder.AppendLine(")GCHandle.FromIntPtr(nativePtr).Target!;");
-            builder.Append("        target.");
-            builder.Append(property.MemberName);
-            builder.Append(" = ");
-            builder.Append(ConvertFromBunValue(property.PropertyType, "value", "context"));
-            builder.AppendLine(";");
+            if (property.PropertyType.ShouldDisposePreviousValueOnReplacement)
+            {
+                builder.Append("        var currentValue = target.");
+                builder.Append(property.MemberName);
+                builder.AppendLine(";");
+                builder.Append("        var nextValue = ");
+                builder.Append(ConvertFromBunValue(property.PropertyType, "value", "context"));
+                builder.AppendLine(";");
+                builder.AppendLine("        try");
+                builder.AppendLine("        {");
+                builder.Append("            target.");
+                builder.Append(property.MemberName);
+                builder.AppendLine(" = nextValue;");
+                builder.AppendLine("        }");
+                builder.AppendLine("        catch");
+                builder.AppendLine("        {");
+                builder.AppendLine("            __JSExportCommon.DisposeFailedReferenceAssignment(currentValue, nextValue);");
+                builder.AppendLine("            throw;");
+                builder.AppendLine("        }");
+                builder.AppendLine("        __JSExportCommon.DisposeReplacedReference(currentValue, nextValue);");
+            }
+            else if (property.Stable)
+            {
+                builder.Append("        var nextValue = ");
+                builder.Append(ConvertFromBunValue(property.PropertyType, "value", "context"));
+                builder.AppendLine(";");
+                builder.AppendLine("        var registration = GetOrCreate(context, publishGlobal: false);");
+                builder.AppendLine("        target.");
+                builder.Append(property.MemberName);
+                builder.AppendLine(" = nextValue;");
+                builder.Append("        registration.ClearStableIdentityValue(nativePtr, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(");");
+                builder.AppendLine("        if (nextValue is not null)");
+                builder.AppendLine("        {");
+                builder.Append("            registration.CacheStableIdentityValue(nativePtr, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(", nextValue, value);");
+                builder.AppendLine("        }");
+            }
+            else
+            {
+                builder.Append("        target.");
+                builder.Append(property.MemberName);
+                builder.Append(" = ");
+                builder.Append(ConvertFromBunValue(property.PropertyType, "value", "context"));
+                builder.AppendLine(";");
+            }
             builder.AppendLine("    }");
             builder.AppendLine();
         }
@@ -1284,7 +1840,42 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.AppendLine("    {");
             builder.AppendLine("        _ = thisValue;");
             builder.AppendLine("        _ = userdata;");
-            AppendInvocation(builder, property.PropertyType, $"{model.FullyQualifiedTypeName}.{property.MemberName}", "        ");
+            if (property.Stable)
+            {
+                builder.Append("        var source = ");
+                builder.Append(model.FullyQualifiedTypeName);
+                builder.Append('.');
+                builder.Append(property.MemberName);
+                builder.AppendLine(";");
+                builder.AppendLine("        var registration = GetOrCreate(context, publishGlobal: false);");
+                builder.AppendLine("        if (source is null)");
+                builder.AppendLine("        {");
+                builder.Append("            registration.ClearStableIdentityValue(0, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(");");
+                builder.AppendLine("            return global::BunSharp.BunValue.Null;");
+                builder.AppendLine("        }");
+                builder.Append("        if (registration.TryGetStableIdentityValue(0, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(", source, out var cached))");
+                builder.AppendLine("        {");
+                builder.AppendLine("            return cached;");
+                builder.AppendLine("        }");
+                builder.Append("        var result = ");
+                builder.Append(ConvertToBunValue(property.PropertyType, "source", "context"));
+                builder.AppendLine(";");
+                builder.Append("        registration.ClearStableIdentityValue(0, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(");");
+                builder.Append("        registration.CacheStableIdentityValue(0, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(", source, result);");
+                builder.AppendLine("        return result;");
+            }
+            else
+            {
+                AppendInvocation(builder, property.PropertyType, $"{model.FullyQualifiedTypeName}.{property.MemberName}", "        ");
+            }
             builder.AppendLine("    }");
             builder.AppendLine();
         }
@@ -1297,12 +1888,60 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.AppendLine("    {");
             builder.AppendLine("        _ = thisValue;");
             builder.AppendLine("        _ = userdata;");
-            builder.Append(model.FullyQualifiedTypeName);
-            builder.Append('.');
-            builder.Append(property.MemberName);
-            builder.Append(" = ");
-            builder.Append(ConvertFromBunValue(property.PropertyType, "value", "context"));
-            builder.AppendLine(";");
+            if (property.PropertyType.ShouldDisposePreviousValueOnReplacement)
+            {
+                builder.Append("        var currentValue = ");
+                builder.Append(model.FullyQualifiedTypeName);
+                builder.Append('.');
+                builder.Append(property.MemberName);
+                builder.AppendLine(";");
+                builder.Append("        var nextValue = ");
+                builder.Append(ConvertFromBunValue(property.PropertyType, "value", "context"));
+                builder.AppendLine(";");
+                builder.AppendLine("        try");
+                builder.AppendLine("        {");
+                builder.Append("            ");
+                builder.Append(model.FullyQualifiedTypeName);
+                builder.Append('.');
+                builder.Append(property.MemberName);
+                builder.AppendLine(" = nextValue;");
+                builder.AppendLine("        }");
+                builder.AppendLine("        catch");
+                builder.AppendLine("        {");
+                builder.AppendLine("            __JSExportCommon.DisposeFailedReferenceAssignment(currentValue, nextValue);");
+                builder.AppendLine("            throw;");
+                builder.AppendLine("        }");
+                builder.AppendLine("        __JSExportCommon.DisposeReplacedReference(currentValue, nextValue);");
+            }
+            else if (property.Stable)
+            {
+                builder.Append("        var nextValue = ");
+                builder.Append(ConvertFromBunValue(property.PropertyType, "value", "context"));
+                builder.AppendLine(";");
+                builder.AppendLine("        var registration = GetOrCreate(context, publishGlobal: false);");
+                builder.Append(model.FullyQualifiedTypeName);
+                builder.Append('.');
+                builder.Append(property.MemberName);
+                builder.AppendLine(" = nextValue;");
+                builder.Append("        registration.ClearStableIdentityValue(0, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(");");
+                builder.AppendLine("        if (nextValue is not null)");
+                builder.AppendLine("        {");
+                builder.Append("            registration.CacheStableIdentityValue(0, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(", nextValue, value);");
+                builder.AppendLine("        }");
+            }
+            else
+            {
+                builder.Append(model.FullyQualifiedTypeName);
+                builder.Append('.');
+                builder.Append(property.MemberName);
+                builder.Append(" = ");
+                builder.Append(ConvertFromBunValue(property.PropertyType, "value", "context"));
+                builder.AppendLine(";");
+            }
             builder.AppendLine("    }");
             builder.AppendLine();
         }
@@ -1322,7 +1961,41 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.Append(method.Parameters.Length.ToString(CultureInfo.InvariantCulture));
         builder.AppendLine(");");
         AppendParameterReads(builder, method.Parameters, "        ");
-        AppendInvocation(builder, method.ReturnType, $"{model.FullyQualifiedTypeName}.{method.MemberName}({string.Join(", ", method.Parameters.Select(static parameter => parameter.LocalName))})", "        ");
+        if (method.Stable)
+        {
+            builder.Append("        var result = ");
+            builder.Append(model.FullyQualifiedTypeName);
+            builder.Append('.');
+            builder.Append(method.MemberName);
+            builder.Append('(');
+            builder.Append(string.Join(", ", method.Parameters.Select(static parameter => parameter.LocalName)));
+            builder.AppendLine(");");
+            builder.AppendLine("        if (result is null)");
+            builder.AppendLine("        {");
+            builder.AppendLine("            return global::BunSharp.BunValue.Null;");
+            builder.AppendLine("        }");
+            builder.AppendLine("        var registration = GetOrCreate(context, publishGlobal: false);");
+            builder.Append("        if (registration.TryGetStableIdentityValue(0, ");
+            builder.Append(CSharpLiteral(method.MemberName));
+            builder.AppendLine(", result, out var cached))");
+            builder.AppendLine("        {");
+            builder.AppendLine("            return cached;");
+            builder.AppendLine("        }");
+            builder.Append("        var value = ");
+            builder.Append(ConvertToBunValue(method.ReturnType, "result", "context"));
+            builder.AppendLine(";");
+            builder.Append("        registration.ClearStableIdentityValue(0, ");
+            builder.Append(CSharpLiteral(method.MemberName));
+            builder.AppendLine(");");
+            builder.Append("        registration.CacheStableIdentityValue(0, ");
+            builder.Append(CSharpLiteral(method.MemberName));
+            builder.AppendLine(", result, value);");
+            builder.AppendLine("        return value;");
+        }
+        else
+        {
+            AppendInvocation(builder, method.ReturnType, $"{model.FullyQualifiedTypeName}.{method.MemberName}({string.Join(", ", method.Parameters.Select(static parameter => parameter.LocalName))})", "        ");
+        }
         builder.AppendLine("    }");
         builder.AppendLine();
     }
@@ -1373,12 +2046,18 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             ExportValueKind.String => $"__JSExportCommon.ReadString({contextExpression}, {valueExpression})",
             ExportValueKind.ByteArray => $"__JSExportCommon.ReadByteArray({contextExpression}, {valueExpression})",
             ExportValueKind.BunValue => valueExpression,
+            ExportValueKind.JSObjectRef => $"__JSExportCommon.ReadJSObjectRef({contextExpression}, {valueExpression})",
+            ExportValueKind.JSFunctionRef => $"__JSExportCommon.ReadJSFunctionRef({contextExpression}, {valueExpression})",
+            ExportValueKind.JSArrayRef => $"__JSExportCommon.ReadJSArrayRef({contextExpression}, {valueExpression})",
+            ExportValueKind.JSArrayBufferRef => $"__JSExportCommon.ReadJSArrayBufferRef({contextExpression}, {valueExpression})",
+            ExportValueKind.JSTypedArrayRef => $"__JSExportCommon.ReadJSTypedArrayRef({contextExpression}, {valueExpression})",
+            ExportValueKind.JSBufferRef => $"__JSExportCommon.ReadJSBufferRef({contextExpression}, {valueExpression})",
             ExportValueKind.ExportedObject => $"{type.HelperId}.UnwrapManaged({contextExpression}, {valueExpression})",
             ExportValueKind.Array => $"__JSExportCommon.{GetArrayReadHelperName(type)}({contextExpression}, {valueExpression})",
             _ => throw new InvalidOperationException($"Unsupported conversion kind {type.Kind}.")
         };
 
-        if (type.Kind is ExportValueKind.String or ExportValueKind.ByteArray or ExportValueKind.ExportedObject or ExportValueKind.Array)
+        if (type.RequiresNullCheckedReferenceHandling)
         {
             return type.IsNullableReferenceType ? expression : expression + "!";
         }
@@ -1396,6 +2075,12 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             ExportValueKind.String => $"{valueExpression} is null ? global::BunSharp.BunValue.Null : {contextExpression}.CreateString({valueExpression})",
             ExportValueKind.ByteArray => $"__JSExportCommon.CreateByteArray({contextExpression}, {valueExpression})",
             ExportValueKind.BunValue => valueExpression,
+            ExportValueKind.JSObjectRef => $"{valueExpression} is null ? global::BunSharp.BunValue.Null : {valueExpression}.Value",
+            ExportValueKind.JSFunctionRef => $"{valueExpression} is null ? global::BunSharp.BunValue.Null : {valueExpression}.Value",
+            ExportValueKind.JSArrayRef => $"{valueExpression} is null ? global::BunSharp.BunValue.Null : {valueExpression}.Value",
+            ExportValueKind.JSArrayBufferRef => $"{valueExpression} is null ? global::BunSharp.BunValue.Null : {valueExpression}.Value",
+            ExportValueKind.JSTypedArrayRef => $"{valueExpression} is null ? global::BunSharp.BunValue.Null : {valueExpression}.Value",
+            ExportValueKind.JSBufferRef => $"{valueExpression} is null ? global::BunSharp.BunValue.Null : {valueExpression}.Value",
             ExportValueKind.ExportedObject => $"{type.HelperId}.WrapManaged({contextExpression}, {valueExpression})",
             ExportValueKind.Array => $"__JSExportCommon.{GetArrayWriteHelperName(type)}({contextExpression}, {valueExpression})",
             _ => throw new InvalidOperationException($"Unsupported conversion kind {type.Kind}.")
@@ -1430,15 +2115,46 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
     private readonly struct ExportRule
     {
-        public ExportRule(bool enabled, string? name)
+        public ExportRule(bool enabled, string? name, bool stable)
         {
             Enabled = enabled;
             Name = name;
+            Stable = stable;
         }
 
         public bool Enabled { get; }
 
         public string? Name { get; }
+
+        public bool Stable { get; }
+    }
+
+    private readonly struct KnownTypeSymbols
+    {
+        public KnownTypeSymbols(INamedTypeSymbol bunValueSymbol, INamedTypeSymbol jsObjectRefSymbol, INamedTypeSymbol jsFunctionRefSymbol, INamedTypeSymbol jsArrayRefSymbol, INamedTypeSymbol jsArrayBufferRefSymbol, INamedTypeSymbol jsTypedArrayRefSymbol, INamedTypeSymbol jsBufferRefSymbol)
+        {
+            BunValueSymbol = bunValueSymbol;
+            JSObjectRefSymbol = jsObjectRefSymbol;
+            JSFunctionRefSymbol = jsFunctionRefSymbol;
+            JSArrayRefSymbol = jsArrayRefSymbol;
+            JSArrayBufferRefSymbol = jsArrayBufferRefSymbol;
+            JSTypedArrayRefSymbol = jsTypedArrayRefSymbol;
+            JSBufferRefSymbol = jsBufferRefSymbol;
+        }
+
+        public INamedTypeSymbol BunValueSymbol { get; }
+
+        public INamedTypeSymbol JSObjectRefSymbol { get; }
+
+        public INamedTypeSymbol JSFunctionRefSymbol { get; }
+
+        public INamedTypeSymbol JSArrayRefSymbol { get; }
+
+        public INamedTypeSymbol JSArrayBufferRefSymbol { get; }
+
+        public INamedTypeSymbol JSTypedArrayRefSymbol { get; }
+
+        public INamedTypeSymbol JSBufferRefSymbol { get; }
     }
 
     private readonly struct ExportedTypeModel
@@ -1491,13 +2207,15 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             string exportName,
             bool isStatic,
             ImmutableArray<ParameterModel> parameters,
-            TypeRefModel returnType)
+            TypeRefModel returnType,
+            bool stable)
         {
             MemberName = memberName;
             ExportName = exportName;
             IsStatic = isStatic;
             Parameters = parameters;
             ReturnType = returnType;
+            Stable = stable;
         }
 
         public string MemberName { get; }
@@ -1510,6 +2228,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
         public TypeRefModel ReturnType { get; }
 
+        public bool Stable { get; }
+
         public string WrapperName => IsStatic ? $"StaticMethod_{MemberName}" : $"InstanceMethod_{MemberName}";
     }
 
@@ -1521,7 +2241,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             bool isStatic,
             bool hasGetter,
             bool hasSetter,
-            TypeRefModel propertyType)
+            TypeRefModel propertyType,
+            bool stable)
         {
             MemberName = memberName;
             ExportName = exportName;
@@ -1529,6 +2250,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             HasGetter = hasGetter;
             HasSetter = hasSetter;
             PropertyType = propertyType;
+            Stable = stable;
         }
 
         public string MemberName { get; }
@@ -1542,6 +2264,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         public bool HasSetter { get; }
 
         public TypeRefModel PropertyType { get; }
+
+        public bool Stable { get; }
 
         public string GetterName => IsStatic ? $"StaticGetter_{MemberName}" : $"InstanceGetter_{MemberName}";
 
@@ -1568,6 +2292,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         public TypeRefModel(ExportValueKind kind, string fullyQualifiedTypeName, string? helperId, bool isNullableReferenceType, TypeRefModel? elementType = null)
         {
             Kind = kind;
+            Semantic = GetSemantic(kind);
             FullyQualifiedTypeName = fullyQualifiedTypeName;
             HelperId = helperId;
             IsNullableReferenceType = isNullableReferenceType;
@@ -1576,6 +2301,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
         public ExportValueKind Kind { get; }
 
+        public ExportValueSemantic Semantic { get; }
+
         public string FullyQualifiedTypeName { get; }
 
         public string? HelperId { get; }
@@ -1583,6 +2310,28 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         public bool IsNullableReferenceType { get; }
 
         public TypeRefModel? ElementType { get; }
+
+        public bool RequiresNullCheckedReferenceHandling => Semantic is ExportValueSemantic.Snapshot or ExportValueSemantic.ManagedReference or ExportValueSemantic.JsReference or ExportValueSemantic.StableCollection or ExportValueSemantic.SharedBinary;
+
+        public bool ShouldDisposePreviousValueOnReplacement => Semantic is ExportValueSemantic.JsReference or ExportValueSemantic.StableCollection or ExportValueSemantic.SharedBinary;
+
+        public bool CanUseStableOption => Kind is ExportValueKind.ByteArray or ExportValueKind.Array;
+    }
+
+    private static ExportValueSemantic GetSemantic(ExportValueKind kind)
+    {
+        return kind switch
+        {
+            ExportValueKind.Bool or ExportValueKind.Int32 or ExportValueKind.Double => ExportValueSemantic.Value,
+            ExportValueKind.String or ExportValueKind.ByteArray or ExportValueKind.Array => ExportValueSemantic.Snapshot,
+            ExportValueKind.BunValue => ExportValueSemantic.TemporaryJsValue,
+            ExportValueKind.JSObjectRef or ExportValueKind.JSFunctionRef => ExportValueSemantic.JsReference,
+            ExportValueKind.JSArrayRef => ExportValueSemantic.StableCollection,
+            ExportValueKind.JSArrayBufferRef or ExportValueKind.JSTypedArrayRef or ExportValueKind.JSBufferRef => ExportValueSemantic.SharedBinary,
+            ExportValueKind.ExportedObject => ExportValueSemantic.ManagedReference,
+            ExportValueKind.Void => ExportValueSemantic.Void,
+            _ => throw new InvalidOperationException($"Unsupported export value kind {kind}.")
+        };
     }
 
     private enum ExportValueKind
@@ -1593,8 +2342,26 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         String,
         ByteArray,
         BunValue,
+        JSObjectRef,
+        JSFunctionRef,
+        JSArrayRef,
+        JSArrayBufferRef,
+        JSTypedArrayRef,
+        JSBufferRef,
         ExportedObject,
         Array,
+        Void,
+    }
+
+    private enum ExportValueSemantic
+    {
+        Value,
+        Snapshot,
+        TemporaryJsValue,
+        ManagedReference,
+        JsReference,
+        StableCollection,
+        SharedBinary,
         Void,
     }
 }

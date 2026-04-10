@@ -18,6 +18,7 @@ BunSharp is a .NET binding for the [libbun](https://github.com/Houfeng/libbun) e
 - Export C# classes with `JSExportAttribute`
 - Support instance methods, instance properties, static members, and `byte[]` ↔ `Uint8Array`
 - Support `T[]` arrays as parameters and return values — including nested arrays (`T[][]`) and arrays of exported classes
+- Support explicit persistent JS references via `JSObjectRef`, `JSFunctionRef`, `JSArrayRef`, `JSArrayBufferRef`, `JSTypedArrayRef`, and `JSBufferRef`
 - No runtime reflection — AOT friendly
 
 ## Requirements
@@ -170,6 +171,88 @@ console.log(DataService.tags);								// ["fast", "aot", "ts"]
 ```
 
 > **Note:** `byte[]` always maps to `Uint8Array` via a zero-copy path and is independent of the general `T[]` mechanism.
+
+## Explicit Reference Types
+
+`string`, `byte[]`, and `T[]` keep copy or snapshot semantics. If you need stable JS identity or shared backing storage, use the explicit reference types instead of overloading the snapshot rules.
+
+- `JSObjectRef`: retain a JS object across calls and property writes
+- `JSFunctionRef`: retain a JS function and call it later from C#
+- `JSArrayRef`: retain a live JS `Array` with stable identity
+- `JSArrayBufferRef`: retain a shared `ArrayBuffer`
+- `JSTypedArrayRef`: retain a shared typed array and inspect its native layout
+- `JSBufferRef`: retain a `Uint8Array` or Buffer-like byte view explicitly
+
+Ordinary `JSExport` classes do not need to expose these types. The default path is still to use plain C# types such as `string`, `byte[]`, `T[]`, and other `[JSExport]` classes.
+
+These reference types are an advanced opt-in surface. Use them only when the JS-facing API must explicitly preserve JS identity or shared backing storage. `JSExport` supports them in constructor parameters, method parameters, return values, and properties so you can choose reference or shared semantics explicitly instead of relying on `BunValue` as an untyped escape hatch.
+
+If a type is mainly part of your C# domain model and is also exported to JS, prefer keeping that model plain. When explicit JS reference semantics are needed, the better pattern is usually to add a thin JS-facing bridge or facade type that uses the reference wrappers only at the export boundary, instead of changing the core domain type to `JSObjectRef`, `JSFunctionRef`, `JSArrayRef`, or `JSArrayBufferRef` members.
+
+For exported `byte[]` and `T[]` properties and method return values, there is also a middle ground: keep the C# type plain and opt into stable JS identity at the export boundary.
+
+```csharp
+[JSExport]
+public sealed class IdentityOptionDemo
+{
+	[JSExport(Stable = true)]
+	public string[] Items { get; set; } = ["a", "b"];
+
+	[JSExport(Stable = true)]
+	public byte[] Payload { get; set; } = [1, 2, 3];
+
+	private readonly string[] _tags = ["fast", "stable"];
+
+	[JSExport(Stable = true)]
+	public string[] getTags()
+	{
+		return _tags;
+	}
+}
+```
+
+`Stable = true` enables stable JS identity for supported exports. Repeated JS reads of the same exported property return the same JS `Array` or `Uint8Array` object until the underlying C# property reference is replaced. Exported methods now use the same rule: consecutive returns of the same managed `byte[]` or `T[]` reference reuse the same cached JS object, but if the method switches to another reference and later switches back, JS receives a new object just like the property path.
+
+> **Current scope:** `Stable` is currently supported only on exported `byte[]` and `T[]` properties and method return values. It is not yet used on constructors, parameters, or arbitrary member types.
+
+Typical `JSExport` class: no explicit reference types needed.
+
+```csharp
+[JSExport]
+public sealed class DemoGreeter
+{
+	public DemoGreeter(string name, byte[] payload)
+	{
+		Name = name;
+		Payload = payload;
+	}
+
+	public string Name { get; set; }
+
+	public byte[] Payload { get; set; }
+}
+```
+
+Advanced opt-in example: explicit reference or shared-memory semantics.
+
+```csharp
+[JSExport]
+public sealed class BinaryBridge
+{
+	public BinaryBridge(JSFunctionRef onFlush)
+	{
+		OnFlush = onFlush;
+	}
+
+	public JSFunctionRef OnFlush { get; set; }
+
+	public JSArrayRef? Children { get; set; }
+
+	public JSArrayBufferRef? SharedBuffer { get; set; }
+}
+```
+
+> **Note:** `BunValue` is still supported, but it should be treated as a temporary value channel. Use the explicit reference types above only when the value must outlive the current call, keep JS identity stable, or expose shared backing storage intentionally.
 
 ## Host Functions
 

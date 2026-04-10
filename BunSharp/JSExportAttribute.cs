@@ -9,6 +9,7 @@ namespace BunSharp;
 ]
 public sealed class JSExportAttribute : Attribute
 {
+
   public JSExportAttribute()
   {
     Enabled = true;
@@ -29,4 +30,6 @@ public sealed class JSExportAttribute : Attribute
   public bool Enabled { get; }
 
   public string? Name { get; }
+
+  public bool Stable { get; set; }
 }
