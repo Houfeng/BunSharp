@@ -3,6 +3,8 @@ using Xunit;
 
 namespace BunSharp.Tests;
 
+public delegate string MessageCallback(string message);
+
 [JSExport]
 public sealed class StableIdentityPropertyDemo
 {
@@ -112,6 +114,39 @@ public sealed class ReferenceSemanticsDemo
     }
 
     return Buffer.ToArray()[0];
+  }
+}
+
+[JSExport]
+public sealed class DelegatePropertyDemo
+{
+  public DelegatePropertyDemo()
+  {
+  }
+
+  public MessageCallback? Callback { get; set; }
+
+  [JSExport(Stable = true)]
+  public MessageCallback? StableCallback { get; set; }
+
+  public string invokeCallback(string value)
+  {
+    return Callback?.Invoke(value) ?? "missing";
+  }
+
+  public string invokeStableCallback(string value)
+  {
+    return StableCallback?.Invoke(value) ?? "missing";
+  }
+
+  public void setManagedCallback(string prefix)
+  {
+    Callback = value => $"{prefix}:{value}";
+  }
+
+  public void setManagedStableCallback(string prefix)
+  {
+    StableCallback = value => $"{prefix}:{value}";
   }
 }
 
@@ -268,6 +303,53 @@ public sealed class JSExportRegressionTests
   }
 
   [Fact]
+  public void DelegateProperties_DefaultToStableAndSupportJsAndManagedCallbacks()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      const demo = new DelegatePropertyDemo();
+
+      const jsCallback = (message) => `js:${message}`;
+      demo.callback = jsCallback;
+      const jsSame = demo.callback === jsCallback;
+      const jsRepeat = demo.callback === demo.callback;
+      const jsInvoke = demo.invokeCallback('one');
+
+      demo.setManagedCallback('managed');
+      const managed1 = demo.callback;
+      const managed2 = demo.callback;
+      const managedSame = managed1 === managed2;
+      const managedInvoke = managed1('two');
+
+      const jsStable = (message) => `stable:${message}`;
+      demo.stableCallback = jsStable;
+      const stableSame = demo.stableCallback === jsStable;
+      const stableInvoke = demo.invokeStableCallback('three');
+
+      demo.setManagedStableCallback('csharp');
+      const managedStable1 = demo.stableCallback;
+      const managedStable2 = demo.stableCallback;
+      const managedStableSame = managedStable1 === managedStable2;
+      const managedStableInvoke = managedStable1('four');
+
+      return [
+        jsSame,
+        jsRepeat,
+        jsInvoke,
+        managedSame,
+        managedInvoke,
+        stableSame,
+        stableInvoke,
+        managedStableSame,
+        managedStableInvoke
+      ].join('|');
+    })()");
+
+    Assert.Equal("true|true|js:one|true|managed:two|true|stable:three|true|csharp:four", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
   public void Stable_OnMethodReturnValues_ReusesJsObjectsPerReturnedManagedReference()
   {
     using var env = CreateEnvironment();
@@ -373,6 +455,7 @@ public sealed class JSExportRegressionTests
     env.Context.ExportType<StableIdentityPropertyDemo>();
     env.Context.ExportType<StableIdentityMethodDemo>();
     env.Context.ExportType<ReferenceSemanticsDemo>();
+    env.Context.ExportType<DelegatePropertyDemo>();
     env.Context.ExportType<ThrowingReferenceSetterDemo>();
     env.Context.ExportType<WrapperCacheChild>();
     env.Context.ExportType<WrapperCacheParent>();

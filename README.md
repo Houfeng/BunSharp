@@ -215,6 +215,31 @@ public sealed class IdentityOptionDemo
 
 > **Current scope:** `Stable` is currently supported only on exported `byte[]` and `T[]` properties and method return values. It is not yet used on constructors, parameters, or arbitrary member types.
 
+## Delegate Properties
+
+Exported delegate properties are supported and always use stable function-reference semantics.
+
+```csharp
+public delegate string MessageCallback(string message);
+
+[JSExport]
+public sealed class CallbackBridge
+{
+	public MessageCallback? Callback { get; set; }
+
+	[JSExport(Stable = true)]
+	public MessageCallback? StableCallback { get; set; }
+}
+```
+
+Rules:
+
+- Delegate properties default to stable behavior even without `Stable = true`
+- Explicit `Stable = true` is allowed
+- Explicit `Stable = false` is rejected by the generator
+
+When JS assigns a function to a delegate property, C# sees a typed delegate wrapper. When C# assigns a delegate to that property, JS reads back a callable function, and repeated reads return the same JS function object until the property changes.
+
 Typical `JSExport` class: no explicit reference types needed.
 
 ```csharp

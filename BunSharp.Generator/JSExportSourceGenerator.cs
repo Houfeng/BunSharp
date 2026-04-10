@@ -71,6 +71,14 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor InvalidDelegateStableDescriptor = new(
+        id: "LBSG007",
+        title: "Delegate properties are always stable",
+        messageFormat: "Member '{0}' is a delegate property and cannot declare Stable = false. Delegate properties always use stable JS function reference semantics.",
+        category: DiagnosticCategory,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
     private static readonly SymbolDisplayFormat FullyQualifiedFormat = new(
         globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Included,
         typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
@@ -387,6 +395,16 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             return false;
         }
 
+        if (returnType.IsDelegate)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                UnsupportedMemberShapeDescriptor,
+                method.Locations.FirstOrDefault(),
+                method.Name,
+                "delegate return types are currently supported only on exported properties"));
+            return false;
+        }
+
         if (exportRule.Stable && !returnType.CanUseStableOption)
         {
             context.ReportDiagnostic(Diagnostic.Create(
@@ -441,10 +459,24 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             return false;
         }
 
-        if (exportRule.Stable && !propertyType.CanUseStableOption)
+        var effectiveStable = exportRule.Stable;
+        if (propertyType.IsDelegate)
+        {
+            if (exportRule.HasStableOption && !exportRule.Stable)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    InvalidDelegateStableDescriptor,
+                    property.Locations.FirstOrDefault(),
+                    property.Name));
+                return false;
+            }
+
+            effectiveStable = true;
+        }
+        else if (exportRule.Stable && !propertyType.CanUseStableOption)
         {
             context.ReportDiagnostic(Diagnostic.Create(
-            UnsupportedStableDescriptor,
+                UnsupportedStableDescriptor,
                 property.Locations.FirstOrDefault(),
                 property.Name,
                 property.Type.ToDisplayString()));
@@ -458,7 +490,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             hasGetter,
             hasSetter,
             propertyType,
-            exportRule.Stable);
+            effectiveStable);
 
         return true;
     }
@@ -487,6 +519,17 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
             if (!TryCreateTypeRef(context, parameter.Type, memberName, knownTypes, exportedTypeNames, allowVoid: false, out var typeRef))
             {
+                result = default;
+                return false;
+            }
+
+            if (typeRef.IsDelegate)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    UnsupportedMemberShapeDescriptor,
+                    parameter.Locations.FirstOrDefault(),
+                    memberName,
+                    "delegate parameters are currently supported only on exported properties"));
                 result = default;
                 return false;
             }
@@ -553,6 +596,91 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
         if (type is INamedTypeSymbol namedType)
         {
+            if (namedType.TypeKind == TypeKind.Delegate)
+            {
+                var invokeMethod = namedType.DelegateInvokeMethod;
+                if (invokeMethod is null)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        UnsupportedTypeDescriptor,
+                        type.Locations.FirstOrDefault(),
+                        memberName,
+                        type.ToDisplayString()));
+                    typeRef = default!;
+                    return false;
+                }
+
+                if (invokeMethod.ReturnsByRef || invokeMethod.ReturnsByRefReadonly)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        UnsupportedMemberShapeDescriptor,
+                        type.Locations.FirstOrDefault(),
+                        memberName,
+                        "delegate ref returns are not supported"));
+                    typeRef = default!;
+                    return false;
+                }
+
+                var delegateParametersBuilder = ImmutableArray.CreateBuilder<ParameterModel>(invokeMethod.Parameters.Length);
+                foreach (var parameter in invokeMethod.Parameters)
+                {
+                    if (parameter.RefKind != RefKind.None)
+                    {
+                        context.ReportDiagnostic(Diagnostic.Create(
+                            UnsupportedMemberShapeDescriptor,
+                            parameter.Locations.FirstOrDefault(),
+                            memberName,
+                            "delegate ref, in, and out parameters are not supported"));
+                        typeRef = default!;
+                        return false;
+                    }
+
+                    if (!TryCreateTypeRef(context, parameter.Type, memberName, knownTypes, exportedTypeNames, allowVoid: false, out var delegateParameterType))
+                    {
+                        typeRef = default!;
+                        return false;
+                    }
+
+                    if (delegateParameterType.IsDelegate)
+                    {
+                        context.ReportDiagnostic(Diagnostic.Create(
+                            UnsupportedMemberShapeDescriptor,
+                            parameter.Locations.FirstOrDefault(),
+                            memberName,
+                            "nested delegate parameters are not supported"));
+                        typeRef = default!;
+                        return false;
+                    }
+
+                    delegateParametersBuilder.Add(new ParameterModel(parameter.Name, delegateParameterType));
+                }
+
+                if (!TryCreateTypeRef(context, invokeMethod.ReturnType, memberName, knownTypes, exportedTypeNames, allowVoid: true, out var delegateReturnType))
+                {
+                    typeRef = default!;
+                    return false;
+                }
+
+                if (delegateReturnType.IsDelegate)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        UnsupportedMemberShapeDescriptor,
+                        type.Locations.FirstOrDefault(),
+                        memberName,
+                        "delegate return values cannot themselves be delegates"));
+                    typeRef = default!;
+                    return false;
+                }
+
+                typeRef = new TypeRefModel(
+                    ExportValueKind.Delegate,
+                    fullyQualifiedName,
+                    null,
+                    isNullableReferenceType: type.NullableAnnotation == NullableAnnotation.Annotated,
+                    delegateSignature: new DelegateSignatureModel(delegateParametersBuilder.ToImmutable(), delegateReturnType));
+                return true;
+            }
+
             if (SymbolEqualityComparer.Default.Equals(namedType, knownTypes.JSObjectRefSymbol))
             {
                 typeRef = new TypeRefModel(ExportValueKind.JSObjectRef, fullyQualifiedName, null, isNullableReferenceType: type.NullableAnnotation == NullableAnnotation.Annotated);
@@ -617,37 +745,39 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             }
 
             var stable = false;
+            var hasStableOption = false;
             foreach (var namedArgument in attribute.NamedArguments)
             {
                 if (namedArgument.Key == "Stable" &&
                     namedArgument.Value.Kind == TypedConstantKind.Primitive &&
                     namedArgument.Value.Type?.SpecialType == SpecialType.System_Boolean)
                 {
+                    hasStableOption = true;
                     stable |= namedArgument.Value.Value is true;
                 }
             }
 
             if (attribute.ConstructorArguments.Length == 0)
             {
-                rule = new ExportRule(true, null, stable);
+                rule = new ExportRule(true, null, stable, hasStableOption);
                 return true;
             }
 
             var argument = attribute.ConstructorArguments[0];
             if (argument.Kind == TypedConstantKind.Primitive && argument.Type?.SpecialType == SpecialType.System_Boolean)
             {
-                rule = new ExportRule(argument.Value is true, null, stable);
+                rule = new ExportRule(argument.Value is true, null, stable, hasStableOption);
                 return true;
             }
 
             if (argument.Kind == TypedConstantKind.Primitive && argument.Type?.SpecialType == SpecialType.System_String)
             {
-                rule = new ExportRule(true, (string?)argument.Value, stable);
+                rule = new ExportRule(true, (string?)argument.Value, stable, hasStableOption);
                 return true;
             }
         }
 
-        rule = new ExportRule(true, null, stable: false);
+        rule = new ExportRule(true, null, stable: false, hasStableOption: false);
         return !HasAttribute(symbol, jsExportAttributeSymbol) || rule.Enabled;
     }
 
@@ -792,6 +922,30 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        {");
         builder.AppendLine("            attempted.Dispose();");
         builder.AppendLine("        }");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    public static void DisposeReference(global::System.IDisposable? value)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        value?.Dispose();");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    public readonly struct DelegateBinding<TDelegate> where TDelegate : class");
+        builder.AppendLine("    {");
+        builder.AppendLine("        public DelegateBinding(TDelegate? value, global::BunSharp.BunValue cachedValue, global::System.IDisposable? ownedReference, bool hasCachedValue)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            Value = value;");
+        builder.AppendLine("            CachedValue = cachedValue;");
+        builder.AppendLine("            OwnedReference = ownedReference;");
+        builder.AppendLine("            HasCachedValue = hasCachedValue;");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        public TDelegate? Value { get; }");
+        builder.AppendLine();
+        builder.AppendLine("        public global::BunSharp.BunValue CachedValue { get; }");
+        builder.AppendLine();
+        builder.AppendLine("        public global::System.IDisposable? OwnedReference { get; }");
+        builder.AppendLine();
+        builder.AppendLine("        public bool HasCachedValue { get; }");
         builder.AppendLine("    }");
         builder.AppendLine();
         builder.AppendLine("    public static void EnsureArgumentCount(string name, global::System.ReadOnlySpan<global::BunSharp.BunValue> args, int expected)");
@@ -1103,15 +1257,18 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine();
         builder.AppendLine("    private sealed class StableIdentityEntry");
         builder.AppendLine("    {");
-        builder.AppendLine("        public StableIdentityEntry(object source, global::BunSharp.BunValue value)");
+        builder.AppendLine("        public StableIdentityEntry(object source, global::BunSharp.BunValue value, global::System.IDisposable? ownedReference)");
         builder.AppendLine("        {");
         builder.AppendLine("            Source = source;");
         builder.AppendLine("            Value = value;");
+        builder.AppendLine("            OwnedReference = ownedReference;");
         builder.AppendLine("        }");
         builder.AppendLine();
         builder.AppendLine("        public object Source { get; }");
         builder.AppendLine();
         builder.AppendLine("        public global::BunSharp.BunValue Value { get; }");
+        builder.AppendLine();
+        builder.AppendLine("        public global::System.IDisposable? OwnedReference { get; }");
         builder.AppendLine("    }");
         builder.AppendLine();
         builder.AppendLine("    private sealed class RegistrationState");
@@ -1183,7 +1340,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("            return false;");
         builder.AppendLine("        }");
         builder.AppendLine();
-        builder.AppendLine("        public void CacheStableIdentityValue(nint handle, string memberName, object source, global::BunSharp.BunValue value)");
+        builder.AppendLine("        public void CacheStableIdentityValue(nint handle, string memberName, object source, global::BunSharp.BunValue value, global::System.IDisposable? ownedReference = null)");
         builder.AppendLine("        {");
         builder.AppendLine("            lock (_trackedHandles)");
         builder.AppendLine("            {");
@@ -1200,9 +1357,10 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("                if (sources.TryGetValue(source, out var existing))");
         builder.AppendLine("                {");
         builder.AppendLine("                    global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, existing.Value);");
+        builder.AppendLine("                    existing.OwnedReference?.Dispose();");
         builder.AppendLine("                }");
         builder.AppendLine("                global::BunSharp.Interop.BunNative.Protect(ContextHandle, value);");
-        builder.AppendLine("                sources[source] = new StableIdentityEntry(source, value);");
+        builder.AppendLine("                sources[source] = new StableIdentityEntry(source, value, ownedReference);");
         builder.AppendLine("            }");
         builder.AppendLine("        }");
         builder.AppendLine();
@@ -1228,6 +1386,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("                    foreach (var entry in sources.Values)");
         builder.AppendLine("                    {");
         builder.AppendLine("                        global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
+        builder.AppendLine("                        entry.OwnedReference?.Dispose();");
         builder.AppendLine("                    }");
         builder.AppendLine("                }");
         builder.AppendLine("            }");
@@ -1262,6 +1421,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("                        foreach (var entry in sources.Values)");
         builder.AppendLine("                        {");
         builder.AppendLine("                            global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
+        builder.AppendLine("                            entry.OwnedReference?.Dispose();");
         builder.AppendLine("                        }");
         builder.AppendLine("                    }");
         builder.AppendLine("                }");
@@ -1291,6 +1451,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("            foreach (var entry in sources.Values)");
         builder.AppendLine("            {");
         builder.AppendLine("                global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
+        builder.AppendLine("                entry.OwnedReference?.Dispose();");
         builder.AppendLine("            }");
         builder.AppendLine("            if (members.Count == 0)");
         builder.AppendLine("            {");
@@ -1598,6 +1759,11 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             AppendStaticProperty(builder, model, property);
         }
 
+        foreach (var property in model.InstanceProperties.Concat(model.StaticProperties).Where(static property => property.PropertyType.IsDelegate))
+        {
+            AppendDelegatePropertyHelpers(builder, model, property);
+        }
+
         builder.AppendLine("}");
         builder.AppendLine();
     }
@@ -1730,7 +1896,37 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.Append("        var target = (");
             builder.Append(model.FullyQualifiedTypeName);
             builder.AppendLine(")GCHandle.FromIntPtr(nativePtr).Target!;");
-            if (property.Stable)
+            if (property.PropertyType.IsDelegate)
+            {
+                builder.Append("        var source = target.");
+                builder.Append(property.MemberName);
+                builder.AppendLine(";");
+                builder.AppendLine("        var registration = GetOrCreate(context, publishGlobal: false);");
+                builder.AppendLine("        if (source is null)");
+                builder.AppendLine("        {");
+                builder.Append("            registration.ClearStableIdentityValue(nativePtr, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(");");
+                builder.AppendLine("            return global::BunSharp.BunValue.Null;");
+                builder.AppendLine("        }");
+                builder.Append("        if (registration.TryGetStableIdentityValue(nativePtr, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(", source, out var cached))");
+                builder.AppendLine("        {");
+                builder.AppendLine("            return cached;");
+                builder.AppendLine("        }");
+                builder.Append("        var result = ");
+                builder.Append(property.DelegateFunctionHelperName);
+                builder.AppendLine("(context, source);");
+                builder.Append("        registration.ClearStableIdentityValue(nativePtr, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(");");
+                builder.Append("        registration.CacheStableIdentityValue(nativePtr, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(", source, result);");
+                builder.AppendLine("        return result;");
+            }
+            else if (property.Stable)
             {
                 builder.Append("        var source = target.");
                 builder.Append(property.MemberName);
@@ -1777,7 +1973,37 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.Append("        var target = (");
             builder.Append(model.FullyQualifiedTypeName);
             builder.AppendLine(")GCHandle.FromIntPtr(nativePtr).Target!;");
-            if (property.PropertyType.ShouldDisposePreviousValueOnReplacement)
+            if (property.PropertyType.IsDelegate)
+            {
+                builder.Append("        var binding = ");
+                builder.Append(property.DelegateBindingHelperName);
+                builder.AppendLine("(context, value);");
+                builder.Append("        var nextValue = ");
+                builder.Append(property.PropertyType.IsNullableReferenceType ? "binding.Value" : "binding.Value!");
+                builder.AppendLine(";");
+                builder.AppendLine("        var registration = GetOrCreate(context, publishGlobal: false);");
+                builder.AppendLine("        try");
+                builder.AppendLine("        {");
+                builder.Append("            target.");
+                builder.Append(property.MemberName);
+                builder.AppendLine(" = nextValue;");
+                builder.AppendLine("        }");
+                builder.AppendLine("        catch");
+                builder.AppendLine("        {");
+                builder.AppendLine("            __JSExportCommon.DisposeReference(binding.OwnedReference);");
+                builder.AppendLine("            throw;");
+                builder.AppendLine("        }");
+                builder.Append("        registration.ClearStableIdentityValue(nativePtr, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(");");
+                builder.AppendLine("        if (binding.HasCachedValue)");
+                builder.AppendLine("        {");
+                builder.Append("            registration.CacheStableIdentityValue(nativePtr, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(", nextValue!, binding.CachedValue, binding.OwnedReference);");
+                builder.AppendLine("        }");
+            }
+            else if (property.PropertyType.ShouldDisposePreviousValueOnReplacement)
             {
                 builder.Append("        var currentValue = target.");
                 builder.Append(property.MemberName);
@@ -1840,7 +2066,39 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.AppendLine("    {");
             builder.AppendLine("        _ = thisValue;");
             builder.AppendLine("        _ = userdata;");
-            if (property.Stable)
+            if (property.PropertyType.IsDelegate)
+            {
+                builder.Append("        var source = ");
+                builder.Append(model.FullyQualifiedTypeName);
+                builder.Append('.');
+                builder.Append(property.MemberName);
+                builder.AppendLine(";");
+                builder.AppendLine("        var registration = GetOrCreate(context, publishGlobal: false);");
+                builder.AppendLine("        if (source is null)");
+                builder.AppendLine("        {");
+                builder.Append("            registration.ClearStableIdentityValue(0, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(");");
+                builder.AppendLine("            return global::BunSharp.BunValue.Null;");
+                builder.AppendLine("        }");
+                builder.Append("        if (registration.TryGetStableIdentityValue(0, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(", source, out var cached))");
+                builder.AppendLine("        {");
+                builder.AppendLine("            return cached;");
+                builder.AppendLine("        }");
+                builder.Append("        var result = ");
+                builder.Append(property.DelegateFunctionHelperName);
+                builder.AppendLine("(context, source);");
+                builder.Append("        registration.ClearStableIdentityValue(0, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(");");
+                builder.Append("        registration.CacheStableIdentityValue(0, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(", source, result);");
+                builder.AppendLine("        return result;");
+            }
+            else if (property.Stable)
             {
                 builder.Append("        var source = ");
                 builder.Append(model.FullyQualifiedTypeName);
@@ -1888,7 +2146,39 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.AppendLine("    {");
             builder.AppendLine("        _ = thisValue;");
             builder.AppendLine("        _ = userdata;");
-            if (property.PropertyType.ShouldDisposePreviousValueOnReplacement)
+            if (property.PropertyType.IsDelegate)
+            {
+                builder.Append("        var binding = ");
+                builder.Append(property.DelegateBindingHelperName);
+                builder.AppendLine("(context, value);");
+                builder.Append("        var nextValue = ");
+                builder.Append(property.PropertyType.IsNullableReferenceType ? "binding.Value" : "binding.Value!");
+                builder.AppendLine(";");
+                builder.AppendLine("        var registration = GetOrCreate(context, publishGlobal: false);");
+                builder.AppendLine("        try");
+                builder.AppendLine("        {");
+                builder.Append("            ");
+                builder.Append(model.FullyQualifiedTypeName);
+                builder.Append('.');
+                builder.Append(property.MemberName);
+                builder.AppendLine(" = nextValue;");
+                builder.AppendLine("        }");
+                builder.AppendLine("        catch");
+                builder.AppendLine("        {");
+                builder.AppendLine("            __JSExportCommon.DisposeReference(binding.OwnedReference);");
+                builder.AppendLine("            throw;");
+                builder.AppendLine("        }");
+                builder.Append("        registration.ClearStableIdentityValue(0, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(");");
+                builder.AppendLine("        if (binding.HasCachedValue)");
+                builder.AppendLine("        {");
+                builder.Append("            registration.CacheStableIdentityValue(0, ");
+                builder.Append(CSharpLiteral(property.MemberName));
+                builder.AppendLine(", nextValue!, binding.CachedValue, binding.OwnedReference);");
+                builder.AppendLine("        }");
+            }
+            else if (property.PropertyType.ShouldDisposePreviousValueOnReplacement)
             {
                 builder.Append("        var currentValue = ");
                 builder.Append(model.FullyQualifiedTypeName);
@@ -1996,6 +2286,106 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         {
             AppendInvocation(builder, method.ReturnType, $"{model.FullyQualifiedTypeName}.{method.MemberName}({string.Join(", ", method.Parameters.Select(static parameter => parameter.LocalName))})", "        ");
         }
+        builder.AppendLine("    }");
+        builder.AppendLine();
+    }
+
+    private static void AppendDelegatePropertyHelpers(StringBuilder builder, ExportedTypeModel model, ExportedPropertyModel property)
+    {
+        var delegateType = property.PropertyType.FullyQualifiedTypeName;
+        var signature = property.PropertyType.DelegateSignature ?? throw new InvalidOperationException("Delegate properties require a delegate signature.");
+
+        builder.Append("    private static __JSExportCommon.DelegateBinding<");
+        builder.Append(delegateType);
+        builder.Append("> ");
+        builder.Append(property.DelegateBindingHelperName);
+        builder.AppendLine("(global::BunSharp.BunContext context, global::BunSharp.BunValue value)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        if (context.IsNull(value) || context.IsUndefined(value))");
+        builder.AppendLine("        {");
+        builder.Append("            return new __JSExportCommon.DelegateBinding<");
+        builder.Append(delegateType);
+        builder.AppendLine(">(null, default, null, false);");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        var functionRef = __JSExportCommon.ReadJSFunctionRef(context, value)!;");
+        builder.Append(delegateType);
+        builder.Append(" managed = (");
+        builder.Append(string.Join(", ", signature.Parameters.Select(static parameter => $"{parameter.Type.FullyQualifiedTypeName} {parameter.LocalName}")));
+        builder.AppendLine(") =>");
+        builder.AppendLine("        {");
+        builder.AppendLine("            var delegateContext = functionRef.Context;");
+        if (signature.Parameters.Length == 0)
+        {
+            if (signature.ReturnType.Kind == ExportValueKind.Void)
+            {
+                builder.AppendLine("            _ = functionRef.Call(global::BunSharp.BunValue.Undefined, global::System.ReadOnlySpan<global::BunSharp.BunValue>.Empty);");
+                builder.AppendLine("            return;");
+            }
+            else
+            {
+                builder.AppendLine("            var result = functionRef.Call(global::BunSharp.BunValue.Undefined, global::System.ReadOnlySpan<global::BunSharp.BunValue>.Empty);");
+                builder.Append("            return ");
+                builder.Append(ConvertFromBunValue(signature.ReturnType, "result", "delegateContext"));
+                builder.AppendLine(";");
+            }
+        }
+        else
+        {
+            builder.Append("            global::System.Span<global::BunSharp.BunValue> invokeArgs = stackalloc global::BunSharp.BunValue[");
+            builder.Append(signature.Parameters.Length.ToString(CultureInfo.InvariantCulture));
+            builder.AppendLine("];");
+            for (var index = 0; index < signature.Parameters.Length; index++)
+            {
+                var parameter = signature.Parameters[index];
+                builder.Append("            invokeArgs[");
+                builder.Append(index.ToString(CultureInfo.InvariantCulture));
+                builder.Append("] = ");
+                builder.Append(ConvertToBunValue(parameter.Type, parameter.LocalName, "delegateContext"));
+                builder.AppendLine(";");
+            }
+
+            if (signature.ReturnType.Kind == ExportValueKind.Void)
+            {
+                builder.AppendLine("            _ = functionRef.Call(global::BunSharp.BunValue.Undefined, invokeArgs);");
+                builder.AppendLine("            return;");
+            }
+            else
+            {
+                builder.AppendLine("            var result = functionRef.Call(global::BunSharp.BunValue.Undefined, invokeArgs);");
+                builder.Append("            return ");
+                builder.Append(ConvertFromBunValue(signature.ReturnType, "result", "delegateContext"));
+                builder.AppendLine(";");
+            }
+        }
+        builder.AppendLine("        };");
+        builder.Append("        return new __JSExportCommon.DelegateBinding<");
+        builder.Append(delegateType);
+        builder.AppendLine(">(managed, value, functionRef, true);");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+
+        builder.Append("    private static global::BunSharp.BunValue ");
+        builder.Append(property.DelegateFunctionHelperName);
+        builder.Append('(');
+        builder.Append("global::BunSharp.BunContext context, ");
+        builder.Append(delegateType);
+        builder.AppendLine(" source)");
+        builder.AppendLine("    {");
+        builder.Append("        return context.CreateFunction(");
+        builder.Append(CSharpLiteral(property.ExportName));
+        builder.AppendLine(", (callbackContext, args, _) =>");
+        builder.AppendLine("        {");
+        builder.Append("            __JSExportCommon.EnsureArgumentCount(");
+        builder.Append(CSharpLiteral($"{model.ExportName}.{property.ExportName}"));
+        builder.Append(", args, ");
+        builder.Append(signature.Parameters.Length.ToString(CultureInfo.InvariantCulture));
+        builder.AppendLine(");");
+        AppendParameterReads(builder, signature.Parameters, "            ");
+        AppendInvocation(builder, signature.ReturnType, $"source({string.Join(", ", signature.Parameters.Select(static parameter => parameter.LocalName))})", "            ");
+        builder.Append("        }, argCount: ");
+        builder.Append(signature.Parameters.Length.ToString(CultureInfo.InvariantCulture));
+        builder.AppendLine(");");
         builder.AppendLine("    }");
         builder.AppendLine();
     }
@@ -2115,11 +2505,12 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
     private readonly struct ExportRule
     {
-        public ExportRule(bool enabled, string? name, bool stable)
+        public ExportRule(bool enabled, string? name, bool stable, bool hasStableOption)
         {
             Enabled = enabled;
             Name = name;
             Stable = stable;
+            HasStableOption = hasStableOption;
         }
 
         public bool Enabled { get; }
@@ -2127,6 +2518,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         public string? Name { get; }
 
         public bool Stable { get; }
+
+        public bool HasStableOption { get; }
     }
 
     private readonly struct KnownTypeSymbols
@@ -2270,6 +2663,10 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         public string GetterName => IsStatic ? $"StaticGetter_{MemberName}" : $"InstanceGetter_{MemberName}";
 
         public string SetterName => IsStatic ? $"StaticSetter_{MemberName}" : $"InstanceSetter_{MemberName}";
+
+        public string DelegateBindingHelperName => $"ReadDelegateBinding_{MemberName}";
+
+        public string DelegateFunctionHelperName => $"CreateDelegateFunction_{MemberName}";
     }
 
     private readonly struct ParameterModel
@@ -2289,7 +2686,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
     private sealed class TypeRefModel
     {
-        public TypeRefModel(ExportValueKind kind, string fullyQualifiedTypeName, string? helperId, bool isNullableReferenceType, TypeRefModel? elementType = null)
+        public TypeRefModel(ExportValueKind kind, string fullyQualifiedTypeName, string? helperId, bool isNullableReferenceType, TypeRefModel? elementType = null, DelegateSignatureModel? delegateSignature = null)
         {
             Kind = kind;
             Semantic = GetSemantic(kind);
@@ -2297,6 +2694,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             HelperId = helperId;
             IsNullableReferenceType = isNullableReferenceType;
             ElementType = elementType;
+            DelegateSignature = delegateSignature;
         }
 
         public ExportValueKind Kind { get; }
@@ -2311,11 +2709,28 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
         public TypeRefModel? ElementType { get; }
 
-        public bool RequiresNullCheckedReferenceHandling => Semantic is ExportValueSemantic.Snapshot or ExportValueSemantic.ManagedReference or ExportValueSemantic.JsReference or ExportValueSemantic.StableCollection or ExportValueSemantic.SharedBinary;
+        public DelegateSignatureModel? DelegateSignature { get; }
+
+        public bool RequiresNullCheckedReferenceHandling => Semantic is ExportValueSemantic.Snapshot or ExportValueSemantic.ManagedReference or ExportValueSemantic.JsReference or ExportValueSemantic.StableCollection or ExportValueSemantic.SharedBinary or ExportValueSemantic.DelegateReference;
 
         public bool ShouldDisposePreviousValueOnReplacement => Semantic is ExportValueSemantic.JsReference or ExportValueSemantic.StableCollection or ExportValueSemantic.SharedBinary;
 
         public bool CanUseStableOption => Kind is ExportValueKind.ByteArray or ExportValueKind.Array;
+
+        public bool IsDelegate => Kind == ExportValueKind.Delegate;
+    }
+
+    private readonly struct DelegateSignatureModel
+    {
+        public DelegateSignatureModel(ImmutableArray<ParameterModel> parameters, TypeRefModel returnType)
+        {
+            Parameters = parameters;
+            ReturnType = returnType;
+        }
+
+        public ImmutableArray<ParameterModel> Parameters { get; }
+
+        public TypeRefModel ReturnType { get; }
     }
 
     private static ExportValueSemantic GetSemantic(ExportValueKind kind)
@@ -2328,6 +2743,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             ExportValueKind.JSObjectRef or ExportValueKind.JSFunctionRef => ExportValueSemantic.JsReference,
             ExportValueKind.JSArrayRef => ExportValueSemantic.StableCollection,
             ExportValueKind.JSArrayBufferRef or ExportValueKind.JSTypedArrayRef or ExportValueKind.JSBufferRef => ExportValueSemantic.SharedBinary,
+            ExportValueKind.Delegate => ExportValueSemantic.DelegateReference,
             ExportValueKind.ExportedObject => ExportValueSemantic.ManagedReference,
             ExportValueKind.Void => ExportValueSemantic.Void,
             _ => throw new InvalidOperationException($"Unsupported export value kind {kind}.")
@@ -2348,6 +2764,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         JSArrayBufferRef,
         JSTypedArrayRef,
         JSBufferRef,
+        Delegate,
         ExportedObject,
         Array,
         Void,
@@ -2362,6 +2779,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         JsReference,
         StableCollection,
         SharedBinary,
+        DelegateReference,
         Void,
     }
 }

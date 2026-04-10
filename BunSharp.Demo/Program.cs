@@ -1,5 +1,7 @@
 ﻿using BunSharp;
 
+public delegate string DemoCallback(string message);
+
 [JSExport]
 public sealed class DemoGreeter
 {
@@ -155,6 +157,39 @@ public sealed class ReferenceDemo
     }
 
     return Buffer.ToArray()[0];
+  }
+}
+
+[JSExport]
+public sealed class DelegatePropertyDemo
+{
+  public DelegatePropertyDemo()
+  {
+  }
+
+  public DemoCallback? Callback { get; set; }
+
+  [JSExport(Stable = true)]
+  public DemoCallback? StableCallback { get; set; }
+
+  public string invokeCallback(string value)
+  {
+    return Callback?.Invoke(value) ?? "missing";
+  }
+
+  public string invokeStableCallback(string value)
+  {
+    return StableCallback?.Invoke(value) ?? "missing";
+  }
+
+  public void setManagedCallback(string prefix)
+  {
+    Callback = value => $"{prefix}:{value}";
+  }
+
+  public void setManagedStableCallback(string prefix)
+  {
+    StableCallback = value => $"{prefix}:{value}";
   }
 }
 
@@ -320,6 +355,7 @@ public static class Program
     context.ExportType<BenchmarkBridge>();
     context.ExportType<ArrayDemo>();
     context.ExportType<ReferenceDemo>();
+    context.ExportType<DelegatePropertyDemo>();
     context.ExportType<ThrowingReferenceDemo>();
     context.ExportType<IdentityOptionDemo>();
   }
@@ -356,6 +392,7 @@ public static class Program
 
     RunArrayValidation(context);
     RunReferenceValidation(context);
+    RunDelegatePropertyValidation(context);
     RunReferenceDisposeValidation(context);
     RunReferenceExceptionValidation(context);
     RunStableIdentityOptionValidation(context);
@@ -455,6 +492,50 @@ public static class Program
     })()");
 
     Console.WriteLine($"[Reference validation] {context.ToManagedString(referenceResult)}");
+  }
+
+  private static void RunDelegatePropertyValidation(BunContext context)
+  {
+    var result = context.Evaluate(@"(() => {
+      const demo = new DelegatePropertyDemo();
+
+      const jsCallback = (message) => `js:${message}`;
+      demo.callback = jsCallback;
+      const jsSame = demo.callback === jsCallback;
+      const jsRepeat = demo.callback === demo.callback;
+      const jsInvoke = demo.invokeCallback('one');
+
+      demo.setManagedCallback('managed');
+      const managed1 = demo.callback;
+      const managed2 = demo.callback;
+      const managedSame = managed1 === managed2;
+      const managedInvoke = managed1('two');
+
+      const jsStable = (message) => `stable:${message}`;
+      demo.stableCallback = jsStable;
+      const stableSame = demo.stableCallback === jsStable;
+      const stableInvoke = demo.invokeStableCallback('three');
+
+      demo.setManagedStableCallback('csharp');
+      const managedStable1 = demo.stableCallback;
+      const managedStable2 = demo.stableCallback;
+      const managedStableSame = managedStable1 === managedStable2;
+      const managedStableInvoke = managedStable1('four');
+
+      return [
+        jsSame,
+        jsRepeat,
+        jsInvoke,
+        managedSame,
+        managedInvoke,
+        stableSame,
+        stableInvoke,
+        managedStableSame,
+        managedStableInvoke
+      ].join('|');
+    })()");
+
+    Console.WriteLine($"[Delegate property] {context.ToManagedString(result)}");
   }
 
   private static void RunReferenceDisposeValidation(BunContext context)
