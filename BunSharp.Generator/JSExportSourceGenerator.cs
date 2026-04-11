@@ -237,7 +237,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             switch (member)
             {
                 case IMethodSymbol method when method.MethodKind == MethodKind.Ordinary:
-                    if (method.DeclaredAccessibility != Accessibility.Public)
+                    var hasExplicitMethodExport = HasAttribute(method, jsExportAttributeSymbol);
+                    if (!IsExportAccessible(method.DeclaredAccessibility, hasExplicitMethodExport))
                     {
                         continue;
                     }
@@ -287,14 +288,15 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                         continue;
                     }
 
-                    var hasPublicGetter = property.GetMethod?.DeclaredAccessibility == Accessibility.Public;
-                    var hasPublicSetter = property.SetMethod?.DeclaredAccessibility == Accessibility.Public;
-                    if (!hasPublicGetter && !hasPublicSetter)
+                    var hasExplicitPropertyExport = HasAttribute(property, jsExportAttributeSymbol);
+                    var hasExportableGetter = IsExportAccessible(property.GetMethod?.DeclaredAccessibility, hasExplicitPropertyExport);
+                    var hasExportableSetter = IsExportAccessible(property.SetMethod?.DeclaredAccessibility, hasExplicitPropertyExport);
+                    if (!hasExportableGetter && !hasExportableSetter)
                     {
                         continue;
                     }
 
-                    if (!TryResolvePropertyModel(context, type, property, jsExportAttributeSymbol, knownTypes, exportedTypeNames, out var propertyModel))
+                    if (!TryResolvePropertyModel(context, type, property, jsExportAttributeSymbol, knownTypes, exportedTypeNames, hasExportableGetter, hasExportableSetter, out var propertyModel))
                     {
                         continue;
                     }
@@ -438,6 +440,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         INamedTypeSymbol jsExportAttributeSymbol,
         KnownTypeSymbols knownTypes,
         ISet<string> exportedTypeNames,
+        bool hasGetter,
+        bool hasSetter,
         out ExportedPropertyModel? model)
     {
         model = null;
@@ -451,9 +455,6 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         {
             return true;
         }
-
-        var hasGetter = property.GetMethod?.DeclaredAccessibility == Accessibility.Public;
-        var hasSetter = property.SetMethod?.DeclaredAccessibility == Accessibility.Public;
         if (!hasGetter && !hasSetter)
         {
             return true;
@@ -784,6 +785,16 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
         rule = new ExportRule(true, null, stable: false, hasStableOption: false);
         return !HasAttribute(symbol, jsExportAttributeSymbol) || rule.Enabled;
+    }
+
+    private static bool IsExportAccessible(Accessibility? accessibility, bool hasExplicitExport)
+    {
+        return accessibility switch
+        {
+            Accessibility.Public => true,
+            Accessibility.Internal when hasExplicitExport => true,
+            _ => false,
+        };
     }
 
     private static bool HasAttribute(ISymbol symbol, INamedTypeSymbol attributeSymbol)

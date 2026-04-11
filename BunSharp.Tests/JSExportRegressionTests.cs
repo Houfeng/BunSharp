@@ -204,6 +204,30 @@ public sealed class ThrowingReferenceSetterDemo
 }
 
 [JSExport]
+public sealed class InternalExplicitMemberDemo
+{
+  public InternalExplicitMemberDemo()
+  {
+  }
+
+  [JSExport]
+  internal int Count { get; set; }
+
+  internal int HiddenCount { get; set; }
+
+  [JSExport]
+  internal string echoInternal(string value)
+  {
+    return $"internal:{value}";
+  }
+
+  internal string hiddenEcho(string value)
+  {
+    return $"hidden:{value}";
+  }
+}
+
+[JSExport]
 public sealed class WrapperCacheChild
 {
   public WrapperCacheChild(string name)
@@ -484,6 +508,27 @@ public sealed class JSExportRegressionTests
   }
 
   [Fact]
+  public void InternalMembers_RequireExplicitJsExportToBeIncluded()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      const demo = new InternalExplicitMemberDemo();
+      demo.count = 7;
+
+      return [
+        demo.count,
+        demo.echoInternal('ok'),
+        'hiddenCount' in demo,
+        'hiddenEcho' in demo,
+        typeof demo.hiddenEcho
+      ].join('|');
+    })()");
+
+    Assert.Equal("7|internal:ok|false|false|undefined", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
   public void ManagedWrapperCache_ReusesJsWrappersForSameManagedInstance()
   {
     using var env = CreateEnvironment();
@@ -516,6 +561,7 @@ public sealed class JSExportRegressionTests
     env.Context.ExportType<DelegatePropertyDemo>();
     env.Context.ExportType<DelegateMethodDemo>();
     env.Context.ExportType<ThrowingReferenceSetterDemo>();
+    env.Context.ExportType<InternalExplicitMemberDemo>();
     env.Context.ExportType<WrapperCacheChild>();
     env.Context.ExportType<WrapperCacheParent>();
     return env;
