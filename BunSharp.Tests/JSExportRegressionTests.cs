@@ -61,6 +61,30 @@ public sealed class StableIdentityMethodDemo
   {
     return alternate ? StaticItemsB : StaticItemsA;
   }
+
+  [JSExport(Stable = true)]
+  public string[]? getNullableItems(int mode)
+  {
+    return mode switch
+    {
+      0 => _itemsA,
+      1 => null,
+      2 => _itemsB,
+      _ => _itemsA,
+    };
+  }
+
+  [JSExport(Stable = true)]
+  public static string[]? getNullableStaticItems(int mode)
+  {
+    return mode switch
+    {
+      0 => StaticItemsA,
+      1 => null,
+      2 => StaticItemsB,
+      _ => StaticItemsA,
+    };
+  }
 }
 
 [JSExport]
@@ -487,6 +511,39 @@ public sealed class JSExportRegressionTests
     })()");
 
     Assert.Equal("true|true|true|true|true|true|true|true|true|a,1|1,2|left", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
+  public void Stable_OnMethodReturnValues_ClearsCachedIdentityWhenMethodReturnsNull()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      const demo = new StableIdentityMethodDemo();
+
+      const instanceA1 = demo.getNullableItems(0);
+      const instanceNull = demo.getNullableItems(1);
+      const instanceA2 = demo.getNullableItems(0);
+
+      const staticA1 = StableIdentityMethodDemo.getNullableStaticItems(0);
+      const staticNull = StableIdentityMethodDemo.getNullableStaticItems(1);
+      const staticA2 = StableIdentityMethodDemo.getNullableStaticItems(0);
+
+      return [
+        instanceA1 !== null,
+        instanceNull === null,
+        instanceA2 !== null,
+        instanceA1 !== instanceA2,
+        instanceA2.join(','),
+        staticA1 !== null,
+        staticNull === null,
+        staticA2 !== null,
+        staticA1 !== staticA2,
+        staticA2.join(',')
+      ].join('|');
+    })()");
+
+    Assert.Equal("true|true|true|true|a,1|true|true|true|true|left", env.Context.ToManagedString(result));
   }
 
   [Fact]
