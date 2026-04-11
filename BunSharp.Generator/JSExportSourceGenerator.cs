@@ -24,7 +24,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
     private const string DiagnosticCategory = "BunSharp.JSExport";
 
     private static readonly DiagnosticDescriptor UnsupportedTypeDescriptor = new(
-        id: "LBSG001",
+        id: "BSG001",
         title: "Unsupported export type",
         messageFormat: "Member '{0}' uses unsupported type '{1}'. Supported types are bool, int, double, string, byte[], T[], BunValue, JSObjectRef, JSFunctionRef, JSArrayRef, JSArrayBufferRef, JSTypedArrayRef, JSBufferRef, void, and JS-exported classes in the same assembly.",
         category: DiagnosticCategory,
@@ -32,7 +32,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         isEnabledByDefault: true);
 
     private static readonly DiagnosticDescriptor MultipleConstructorsDescriptor = new(
-        id: "LBSG002",
+        id: "BSG002",
         title: "Unsupported constructor shape",
         messageFormat: "Type '{0}' must declare exactly one public instance constructor to be JS-exportable.",
         category: DiagnosticCategory,
@@ -40,7 +40,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         isEnabledByDefault: true);
 
     private static readonly DiagnosticDescriptor DuplicateExportNameDescriptor = new(
-        id: "LBSG003",
+        id: "BSG003",
         title: "Duplicate export name",
         messageFormat: "Type '{0}' has multiple exported {1} members named '{2}'.",
         category: DiagnosticCategory,
@@ -48,7 +48,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         isEnabledByDefault: true);
 
     private static readonly DiagnosticDescriptor InvalidMemberContainerDescriptor = new(
-        id: "LBSG004",
+        id: "BSG004",
         title: "Member export requires exported class",
         messageFormat: "Member '{0}' cannot use JSExportAttribute because containing type '{1}' is not exported.",
         category: DiagnosticCategory,
@@ -56,7 +56,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         isEnabledByDefault: true);
 
     private static readonly DiagnosticDescriptor UnsupportedMemberShapeDescriptor = new(
-        id: "LBSG005",
+        id: "BSG005",
         title: "Unsupported export member",
         messageFormat: "Member '{0}' is not supported for JS export: {1}.",
         category: DiagnosticCategory,
@@ -64,7 +64,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         isEnabledByDefault: true);
 
     private static readonly DiagnosticDescriptor UnsupportedStableDescriptor = new(
-        id: "LBSG006",
+        id: "BSG006",
         title: "Unsupported stable JS identity option",
         messageFormat: "Member '{0}' cannot use Stable with type '{1}'. Stable is currently supported only on exported byte[] and T[] properties and method return values.",
         category: DiagnosticCategory,
@@ -72,7 +72,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         isEnabledByDefault: true);
 
     private static readonly DiagnosticDescriptor InvalidDelegateStableDescriptor = new(
-        id: "LBSG007",
+        id: "BSG007",
         title: "Delegate exports are always stable",
         messageFormat: "Member '{0}' uses a delegate export shape and cannot declare Stable = false. Delegate exports always use stable JS function reference semantics.",
         category: DiagnosticCategory,
@@ -80,7 +80,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         isEnabledByDefault: true);
 
     private static readonly DiagnosticDescriptor UnsupportedMemberAccessibilityDescriptor = new(
-        id: "LBSG008",
+        id: "BSG008",
         title: "Unsupported export member accessibility",
         messageFormat: "Member '{0}' cannot use JSExportAttribute with accessibility '{1}'. JSExport supports public members, and explicitly annotated internal members only.",
         category: DiagnosticCategory,
@@ -88,7 +88,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         isEnabledByDefault: true);
 
     private static readonly DiagnosticDescriptor UnsupportedTypeAccessibilityDescriptor = new(
-        id: "LBSG009",
+        id: "BSG009",
         title: "Unsupported export type accessibility",
         messageFormat: "Type '{0}' cannot use JSExportAttribute with accessibility '{1}'. JSExport supports public and internal classes only.",
         category: DiagnosticCategory,

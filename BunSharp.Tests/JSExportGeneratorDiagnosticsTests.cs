@@ -24,7 +24,7 @@ public sealed class PrivateMemberDemo
   private int hidden() => 1;
 }");
 
-    var diagnostic = Assert.Single(diagnostics, d => d.Id == "LBSG008");
+    var diagnostic = Assert.Single(diagnostics, d => d.Id == "BSG008");
     Assert.Contains("hidden", diagnostic.GetMessage());
     Assert.Contains("private", diagnostic.GetMessage());
   }
@@ -44,7 +44,7 @@ public sealed class InternalMemberDemo
   internal int echo() => 1;
 }");
 
-    Assert.DoesNotContain(diagnostics, d => d.Id == "LBSG008");
+    Assert.DoesNotContain(diagnostics, d => d.Id == "BSG008");
   }
 
   [Fact]
@@ -62,7 +62,7 @@ public sealed class UnsupportedPropertyDemo
   public DateTime value { get; set; }
 }");
 
-    var diagnostic = Assert.Single(diagnostics, d => d.Id == "LBSG001");
+    var diagnostic = Assert.Single(diagnostics, d => d.Id == "BSG001");
     Assert.Contains("value", diagnostic.GetMessage());
     Assert.Contains("System.DateTime", diagnostic.GetMessage());
   }
@@ -82,7 +82,7 @@ public sealed class UnsupportedReturnDemo
   public DateTime readValue() => default;
 }");
 
-    var diagnostic = Assert.Single(diagnostics, d => d.Id == "LBSG001");
+    var diagnostic = Assert.Single(diagnostics, d => d.Id == "BSG001");
     Assert.Contains("readValue", diagnostic.GetMessage());
     Assert.Contains("System.DateTime", diagnostic.GetMessage());
   }
@@ -102,7 +102,7 @@ public sealed class UnsupportedParameterDemo
   public void writeValue(DateTime value) { }
 }");
 
-    var diagnostic = Assert.Single(diagnostics, d => d.Id == "LBSG001");
+    var diagnostic = Assert.Single(diagnostics, d => d.Id == "BSG001");
     Assert.Contains("writeValue", diagnostic.GetMessage());
     Assert.Contains("System.DateTime", diagnostic.GetMessage());
   }
@@ -122,7 +122,7 @@ public sealed class Outer
   }
 }");
 
-    var diagnostic = Assert.Single(diagnostics, d => d.Id == "LBSG009");
+    var diagnostic = Assert.Single(diagnostics, d => d.Id == "BSG009");
     Assert.Contains("Outer.Hidden", diagnostic.GetMessage());
     Assert.Contains("private", diagnostic.GetMessage());
   }
@@ -139,7 +139,7 @@ internal sealed class InternalExportedType
   public InternalExportedType() { }
 }");
 
-    Assert.DoesNotContain(diagnostics, d => d.Id == "LBSG009");
+    Assert.DoesNotContain(diagnostics, d => d.Id == "BSG009");
   }
 
   private static ImmutableArray<Diagnostic> RunGenerator(string source)
