@@ -1352,7 +1352,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        private readonly HashSet<nint> _trackedHandles = new();");
         builder.AppendLine("        private readonly Dictionary<object, ManagedWrapperEntry> _wrappersByInstance = new(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
         builder.AppendLine("        private readonly Dictionary<nint, ManagedWrapperEntry> _wrappersByHandle = new();");
-        builder.AppendLine("        private readonly Dictionary<nint, Dictionary<string, Dictionary<object, StableIdentityEntry>>> _stableIdentityEntries = new();");
+        builder.AppendLine("        private readonly Dictionary<nint, Dictionary<int, StableIdentityEntry>> _stableIdentityEntries = new();");
         builder.AppendLine();
         builder.AppendLine("        public RegistrationState(global::BunSharp.BunClass @class, global::BunSharp.BunValue constructor, global::BunSharp.BunClassPersistentFinalizer releaseHandleFinalizer, nint contextHandle)");
         builder.AppendLine("        {");
@@ -1372,13 +1372,10 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine();
         builder.AppendLine("        public bool TryGetWrapper(object instance, out global::BunSharp.BunValue value)");
         builder.AppendLine("        {");
-        builder.AppendLine("            lock (_trackedHandles)");
+        builder.AppendLine("            if (_wrappersByInstance.TryGetValue(instance, out var entry))");
         builder.AppendLine("            {");
-        builder.AppendLine("                if (_wrappersByInstance.TryGetValue(instance, out var entry))");
-        builder.AppendLine("                {");
-        builder.AppendLine("                    value = entry.Value;");
-        builder.AppendLine("                    return true;");
-        builder.AppendLine("                }");
+        builder.AppendLine("                value = entry.Value;");
+        builder.AppendLine("                return true;");
         builder.AppendLine("            }");
         builder.AppendLine();
         builder.AppendLine("            value = default;");
@@ -1387,129 +1384,97 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine();
         builder.AppendLine("        public void TrackWrapper(object instance, nint handle, global::BunSharp.BunValue value)");
         builder.AppendLine("        {");
-        builder.AppendLine("            lock (_trackedHandles)");
-        builder.AppendLine("            {");
-        builder.AppendLine("                _trackedHandles.Add(handle);");
-        builder.AppendLine("                var entry = new ManagedWrapperEntry(instance, handle, value);");
-        builder.AppendLine("                _wrappersByInstance[instance] = entry;");
-        builder.AppendLine("                _wrappersByHandle[handle] = entry;");
-        builder.AppendLine("            }");
+        builder.AppendLine("            _trackedHandles.Add(handle);");
+        builder.AppendLine("            var entry = new ManagedWrapperEntry(instance, handle, value);");
+        builder.AppendLine("            _wrappersByInstance[instance] = entry;");
+        builder.AppendLine("            _wrappersByHandle[handle] = entry;");
         builder.AppendLine("        }");
         builder.AppendLine();
         builder.AppendLine("        public void TrackHandle(nint handle)");
         builder.AppendLine("        {");
-        builder.AppendLine("            lock (_trackedHandles) _trackedHandles.Add(handle);");
+        builder.AppendLine("            _trackedHandles.Add(handle);");
         builder.AppendLine("        }");
         builder.AppendLine();
-        builder.AppendLine("        public bool TryGetStableIdentityValue(nint handle, string memberName, object source, out global::BunSharp.BunValue value)");
+        builder.AppendLine("        public bool TryGetStableIdentityValue(nint handle, int memberSlot, object source, out global::BunSharp.BunValue value)");
         builder.AppendLine("        {");
-        builder.AppendLine("            lock (_trackedHandles)");
+        builder.AppendLine("            if (_stableIdentityEntries.TryGetValue(handle, out var members) && members.TryGetValue(memberSlot, out var entry) && global::System.Object.ReferenceEquals(entry.Source, source))");
         builder.AppendLine("            {");
-        builder.AppendLine("                if (_stableIdentityEntries.TryGetValue(handle, out var members) && members.TryGetValue(memberName, out var sources) && sources.TryGetValue(source, out var entry))");
-        builder.AppendLine("                {");
-        builder.AppendLine("                    value = entry.Value;");
-        builder.AppendLine("                    return true;");
-        builder.AppendLine("                }");
+        builder.AppendLine("                value = entry.Value;");
+        builder.AppendLine("                return true;");
         builder.AppendLine("            }");
         builder.AppendLine();
         builder.AppendLine("            value = default;");
         builder.AppendLine("            return false;");
         builder.AppendLine("        }");
         builder.AppendLine();
-        builder.AppendLine("        public void CacheStableIdentityValue(nint handle, string memberName, object source, global::BunSharp.BunValue value, global::System.IDisposable? ownedReference = null)");
+        builder.AppendLine("        public void CacheStableIdentityValue(nint handle, int memberSlot, object source, global::BunSharp.BunValue value, global::System.IDisposable? ownedReference = null)");
         builder.AppendLine("        {");
-        builder.AppendLine("            lock (_trackedHandles)");
+        builder.AppendLine("            if (!_stableIdentityEntries.TryGetValue(handle, out var members))");
         builder.AppendLine("            {");
-        builder.AppendLine("                if (!_stableIdentityEntries.TryGetValue(handle, out var members))");
-        builder.AppendLine("                {");
-        builder.AppendLine("                    members = new Dictionary<string, Dictionary<object, StableIdentityEntry>>(StringComparer.Ordinal);");
-        builder.AppendLine("                    _stableIdentityEntries[handle] = members;");
-        builder.AppendLine("                }");
-        builder.AppendLine("                if (!members.TryGetValue(memberName, out var sources))");
-        builder.AppendLine("                {");
-        builder.AppendLine("                    sources = new Dictionary<object, StableIdentityEntry>(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
-        builder.AppendLine("                    members[memberName] = sources;");
-        builder.AppendLine("                }");
-        builder.AppendLine("                if (sources.TryGetValue(source, out var existing))");
-        builder.AppendLine("                {");
-        builder.AppendLine("                    global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, existing.Value);");
-        builder.AppendLine("                    existing.OwnedReference?.Dispose();");
-        builder.AppendLine("                }");
-        builder.AppendLine("                global::BunSharp.Interop.BunNative.Protect(ContextHandle, value);");
-        builder.AppendLine("                sources[source] = new StableIdentityEntry(source, value, ownedReference);");
+        builder.AppendLine("                members = new Dictionary<int, StableIdentityEntry>();");
+        builder.AppendLine("                _stableIdentityEntries[handle] = members;");
         builder.AppendLine("            }");
+        builder.AppendLine("            if (members.TryGetValue(memberSlot, out var existing))");
+        builder.AppendLine("            {");
+        builder.AppendLine("                global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, existing.Value);");
+        builder.AppendLine("                existing.OwnedReference?.Dispose();");
+        builder.AppendLine("            }");
+        builder.AppendLine("            global::BunSharp.Interop.BunNative.Protect(ContextHandle, value);");
+        builder.AppendLine("            members[memberSlot] = new StableIdentityEntry(source, value, ownedReference);");
         builder.AppendLine("        }");
         builder.AppendLine();
-        builder.AppendLine("        public void ClearStableIdentityValue(nint handle, string memberName)");
+        builder.AppendLine("        public void ClearStableIdentityValue(nint handle, int memberSlot)");
         builder.AppendLine("        {");
-        builder.AppendLine("            lock (_trackedHandles)");
-        builder.AppendLine("            {");
-        builder.AppendLine("                ClearStableIdentityValueCore(handle, memberName);");
-        builder.AppendLine("            }");
+        builder.AppendLine("            ClearStableIdentityValueCore(handle, memberSlot);");
         builder.AppendLine("        }");
         builder.AppendLine();
         builder.AppendLine("        public void ReleaseStableIdentityValuesForHandle(nint handle)");
         builder.AppendLine("        {");
-        builder.AppendLine("            lock (_trackedHandles)");
+        builder.AppendLine("            if (!_stableIdentityEntries.Remove(handle, out var members))");
         builder.AppendLine("            {");
-        builder.AppendLine("                if (!_stableIdentityEntries.Remove(handle, out var members))");
-        builder.AppendLine("                {");
-        builder.AppendLine("                    return;");
-        builder.AppendLine("                }");
+        builder.AppendLine("                return;");
+        builder.AppendLine("            }");
         builder.AppendLine();
-        builder.AppendLine("                foreach (var sources in members.Values)");
-        builder.AppendLine("                {");
-        builder.AppendLine("                    foreach (var entry in sources.Values)");
-        builder.AppendLine("                    {");
-        builder.AppendLine("                        global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
-        builder.AppendLine("                        entry.OwnedReference?.Dispose();");
-        builder.AppendLine("                    }");
-        builder.AppendLine("                }");
+        builder.AppendLine("            foreach (var entry in members.Values)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
+        builder.AppendLine("                entry.OwnedReference?.Dispose();");
         builder.AppendLine("            }");
         builder.AppendLine("        }");
         builder.AppendLine();
         builder.AppendLine("        public bool UntrackHandle(nint handle)");
         builder.AppendLine("        {");
-        builder.AppendLine("            lock (_trackedHandles)");
+        builder.AppendLine("            if (!_trackedHandles.Remove(handle))");
         builder.AppendLine("            {");
-        builder.AppendLine("                if (!_trackedHandles.Remove(handle))");
-        builder.AppendLine("                {");
-        builder.AppendLine("                    return false;");
-        builder.AppendLine("                }");
-        builder.AppendLine();
-        builder.AppendLine("                if (_wrappersByHandle.Remove(handle, out var entry))");
-        builder.AppendLine("                {");
-        builder.AppendLine("                    _wrappersByInstance.Remove(entry.Instance);");
-        builder.AppendLine("                }");
-        builder.AppendLine();
-        builder.AppendLine("                return true;");
+        builder.AppendLine("                return false;");
         builder.AppendLine("            }");
+        builder.AppendLine();
+        builder.AppendLine("            if (_wrappersByHandle.Remove(handle, out var entry))");
+        builder.AppendLine("            {");
+        builder.AppendLine("                _wrappersByInstance.Remove(entry.Instance);");
+        builder.AppendLine("            }");
+        builder.AppendLine();
+        builder.AppendLine("            return true;");
         builder.AppendLine("        }");
         builder.AppendLine();
         builder.AppendLine("        public void ReleaseTrackedHandles()");
         builder.AppendLine("        {");
-        builder.AppendLine("            lock (_trackedHandles)");
+        builder.AppendLine("            foreach (var members in _stableIdentityEntries.Values)");
         builder.AppendLine("            {");
-        builder.AppendLine("                foreach (var members in _stableIdentityEntries.Values)");
+        builder.AppendLine("                foreach (var entry in members.Values)");
         builder.AppendLine("                {");
-        builder.AppendLine("                    foreach (var sources in members.Values)");
-        builder.AppendLine("                    {");
-        builder.AppendLine("                        foreach (var entry in sources.Values)");
-        builder.AppendLine("                        {");
-        builder.AppendLine("                            global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
-        builder.AppendLine("                            entry.OwnedReference?.Dispose();");
-        builder.AppendLine("                        }");
-        builder.AppendLine("                    }");
+        builder.AppendLine("                    global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
+        builder.AppendLine("                    entry.OwnedReference?.Dispose();");
         builder.AppendLine("                }");
-        builder.AppendLine("                foreach (var h in _trackedHandles)");
-        builder.AppendLine("                {");
-        builder.AppendLine("                    GCHandle.FromIntPtr(h).Free();");
-        builder.AppendLine("                }");
-        builder.AppendLine("                _trackedHandles.Clear();");
-        builder.AppendLine("                _stableIdentityEntries.Clear();");
-        builder.AppendLine("                _wrappersByHandle.Clear();");
-        builder.AppendLine("                _wrappersByInstance.Clear();");
         builder.AppendLine("            }");
+        builder.AppendLine("            foreach (var h in _trackedHandles)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                GCHandle.FromIntPtr(h).Free();");
+        builder.AppendLine("            }");
+        builder.AppendLine("            _trackedHandles.Clear();");
+        builder.AppendLine("            _stableIdentityEntries.Clear();");
+        builder.AppendLine("            _wrappersByHandle.Clear();");
+        builder.AppendLine("            _wrappersByInstance.Clear();");
         builder.AppendLine("        }");
         builder.AppendLine();
         builder.AppendLine("        public void DisposeReleaseHandleFinalizer()");
@@ -1517,18 +1482,15 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("            ReleaseHandleFinalizer.Dispose();");
         builder.AppendLine("        }");
         builder.AppendLine();
-        builder.AppendLine("        private void ClearStableIdentityValueCore(nint handle, string memberName)");
+        builder.AppendLine("        private void ClearStableIdentityValueCore(nint handle, int memberSlot)");
         builder.AppendLine("        {");
-        builder.AppendLine("            if (!_stableIdentityEntries.TryGetValue(handle, out var members) || !members.Remove(memberName, out var sources))");
+        builder.AppendLine("            if (!_stableIdentityEntries.TryGetValue(handle, out var members) || !members.Remove(memberSlot, out var entry))");
         builder.AppendLine("            {");
         builder.AppendLine("                return;");
         builder.AppendLine("            }");
         builder.AppendLine();
-        builder.AppendLine("            foreach (var entry in sources.Values)");
-        builder.AppendLine("            {");
-        builder.AppendLine("                global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
-        builder.AppendLine("                entry.OwnedReference?.Dispose();");
-        builder.AppendLine("            }");
+        builder.AppendLine("            global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
+        builder.AppendLine("            entry.OwnedReference?.Dispose();");
         builder.AppendLine("            if (members.Count == 0)");
         builder.AppendLine("            {");
         builder.AppendLine("                _stableIdentityEntries.Remove(handle);");
@@ -1815,24 +1777,26 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("    }");
         builder.AppendLine();
 
+        var stableMemberSlots = CreateStableMemberSlots(model);
+
         foreach (var method in model.InstanceMethods)
         {
-            AppendInstanceMethod(builder, model, method);
+            AppendInstanceMethod(builder, model, method, stableMemberSlots);
         }
 
         foreach (var method in model.StaticMethods)
         {
-            AppendStaticMethod(builder, model, method);
+            AppendStaticMethod(builder, model, method, stableMemberSlots);
         }
 
         foreach (var property in model.InstanceProperties)
         {
-            AppendInstanceProperty(builder, model, property);
+            AppendInstanceProperty(builder, model, property, stableMemberSlots);
         }
 
         foreach (var property in model.StaticProperties)
         {
-            AppendStaticProperty(builder, model, property);
+            AppendStaticProperty(builder, model, property, stableMemberSlots);
         }
 
         foreach (var property in model.InstanceProperties.Concat(model.StaticProperties).Where(static property => property.PropertyType.IsDelegate))
@@ -1912,8 +1876,46 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("    }");
     }
 
-    private static void AppendInstanceMethod(StringBuilder builder, ExportedTypeModel model, ExportedMethodModel method)
+    private static Dictionary<string, int> CreateStableMemberSlots(ExportedTypeModel model)
     {
+        var slots = new Dictionary<string, int>(StringComparer.Ordinal);
+        var nextSlot = 0;
+
+        void Add(string memberName)
+        {
+            if (!slots.ContainsKey(memberName))
+            {
+                slots.Add(memberName, nextSlot++);
+            }
+        }
+
+        foreach (var property in model.InstanceProperties.Concat(model.StaticProperties))
+        {
+            if (property.PropertyType.IsDelegate || property.Stable)
+            {
+                Add(property.MemberName);
+            }
+        }
+
+        foreach (var method in model.InstanceMethods.Concat(model.StaticMethods))
+        {
+            if (method.Stable)
+            {
+                Add(method.MemberName);
+            }
+        }
+
+        return slots;
+    }
+
+    private static int GetStableMemberSlot(IReadOnlyDictionary<string, int> stableMemberSlots, string memberName)
+    {
+        return stableMemberSlots[memberName];
+    }
+
+    private static void AppendInstanceMethod(StringBuilder builder, ExportedTypeModel model, ExportedMethodModel method, IReadOnlyDictionary<string, int> stableMemberSlots)
+    {
+        var stableMemberSlot = method.Stable ? GetStableMemberSlot(stableMemberSlots, method.MemberName) : -1;
         builder.Append("    private static global::BunSharp.BunValue ");
         builder.Append(method.WrapperName);
         builder.AppendLine("(global::BunSharp.BunContext context, global::BunSharp.BunValue thisValue, nint nativePtr, global::System.ReadOnlySpan<global::BunSharp.BunValue> args, nint userdata)");
@@ -1940,12 +1942,12 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.AppendLine("        if (result is null)");
             builder.AppendLine("        {");
             builder.Append("            registration.ClearStableIdentityValue(nativePtr, ");
-            builder.Append(CSharpLiteral(method.MemberName));
+            builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine(");");
             builder.AppendLine("            return global::BunSharp.BunValue.Null;");
             builder.AppendLine("        }");
             builder.Append("        if (registration.TryGetStableIdentityValue(nativePtr, ");
-            builder.Append(CSharpLiteral(method.MemberName));
+            builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine(", result, out var cached))");
             builder.AppendLine("        {");
             builder.AppendLine("            return cached;");
@@ -1954,10 +1956,10 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.Append(method.ReturnType.IsDelegate ? $"{method.DelegateFunctionHelperName}(context, result)" : ConvertToBunValue(method.ReturnType, "result", "context"));
             builder.AppendLine(";");
             builder.Append("        registration.ClearStableIdentityValue(nativePtr, ");
-            builder.Append(CSharpLiteral(method.MemberName));
+            builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine(");");
             builder.Append("        registration.CacheStableIdentityValue(nativePtr, ");
-            builder.Append(CSharpLiteral(method.MemberName));
+            builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine(", result, value);");
             builder.AppendLine("        return value;");
         }
@@ -1969,8 +1971,11 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine();
     }
 
-    private static void AppendInstanceProperty(StringBuilder builder, ExportedTypeModel model, ExportedPropertyModel property)
+    private static void AppendInstanceProperty(StringBuilder builder, ExportedTypeModel model, ExportedPropertyModel property, IReadOnlyDictionary<string, int> stableMemberSlots)
     {
+        var stableMemberSlot = (property.PropertyType.IsDelegate || property.Stable)
+            ? GetStableMemberSlot(stableMemberSlots, property.MemberName)
+            : -1;
         if (property.HasGetter)
         {
             builder.Append("    private static global::BunSharp.BunValue ");
@@ -1989,12 +1994,12 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.AppendLine("        if (source is null)");
                 builder.AppendLine("        {");
                 builder.Append("            registration.ClearStableIdentityValue(nativePtr, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(");");
                 builder.AppendLine("            return global::BunSharp.BunValue.Null;");
                 builder.AppendLine("        }");
                 builder.Append("        if (registration.TryGetStableIdentityValue(nativePtr, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(", source, out var cached))");
                 builder.AppendLine("        {");
                 builder.AppendLine("            return cached;");
@@ -2003,10 +2008,10 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.Append(property.DelegateFunctionHelperName);
                 builder.AppendLine("(context, source);");
                 builder.Append("        registration.ClearStableIdentityValue(nativePtr, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(");");
                 builder.Append("        registration.CacheStableIdentityValue(nativePtr, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(", source, result);");
                 builder.AppendLine("        return result;");
             }
@@ -2019,12 +2024,12 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.AppendLine("        if (source is null)");
                 builder.AppendLine("        {");
                 builder.Append("            registration.ClearStableIdentityValue(nativePtr, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(");");
                 builder.AppendLine("            return global::BunSharp.BunValue.Null;");
                 builder.AppendLine("        }");
                 builder.Append("        if (registration.TryGetStableIdentityValue(nativePtr, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(", source, out var cached))");
                 builder.AppendLine("        {");
                 builder.AppendLine("            return cached;");
@@ -2033,10 +2038,10 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.Append(ConvertToBunValue(property.PropertyType, "source", "context"));
                 builder.AppendLine(";");
                 builder.Append("        registration.ClearStableIdentityValue(nativePtr, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(");");
                 builder.Append("        registration.CacheStableIdentityValue(nativePtr, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(", source, result);");
                 builder.AppendLine("        return result;");
             }
@@ -2078,12 +2083,12 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.AppendLine("            throw;");
                 builder.AppendLine("        }");
                 builder.Append("        registration.ClearStableIdentityValue(nativePtr, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(");");
                 builder.AppendLine("        if (binding.HasCachedValue)");
                 builder.AppendLine("        {");
                 builder.Append("            registration.CacheStableIdentityValue(nativePtr, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(", nextValue!, binding.CachedValue, binding.OwnedReference);");
                 builder.AppendLine("        }");
             }
@@ -2118,12 +2123,12 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.Append(property.MemberName);
                 builder.AppendLine(" = nextValue;");
                 builder.Append("        registration.ClearStableIdentityValue(nativePtr, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(");");
                 builder.AppendLine("        if (nextValue is not null)");
                 builder.AppendLine("        {");
                 builder.Append("            registration.CacheStableIdentityValue(nativePtr, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(", nextValue, value);");
                 builder.AppendLine("        }");
             }
@@ -2140,8 +2145,11 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         }
     }
 
-    private static void AppendStaticProperty(StringBuilder builder, ExportedTypeModel model, ExportedPropertyModel property)
+    private static void AppendStaticProperty(StringBuilder builder, ExportedTypeModel model, ExportedPropertyModel property, IReadOnlyDictionary<string, int> stableMemberSlots)
     {
+        var stableMemberSlot = (property.PropertyType.IsDelegate || property.Stable)
+            ? GetStableMemberSlot(stableMemberSlots, property.MemberName)
+            : -1;
         if (property.HasGetter)
         {
             builder.Append("    private static global::BunSharp.BunValue ");
@@ -2161,12 +2169,12 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.AppendLine("        if (source is null)");
                 builder.AppendLine("        {");
                 builder.Append("            registration.ClearStableIdentityValue(0, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(");");
                 builder.AppendLine("            return global::BunSharp.BunValue.Null;");
                 builder.AppendLine("        }");
                 builder.Append("        if (registration.TryGetStableIdentityValue(0, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(", source, out var cached))");
                 builder.AppendLine("        {");
                 builder.AppendLine("            return cached;");
@@ -2175,10 +2183,10 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.Append(property.DelegateFunctionHelperName);
                 builder.AppendLine("(context, source);");
                 builder.Append("        registration.ClearStableIdentityValue(0, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(");");
                 builder.Append("        registration.CacheStableIdentityValue(0, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(", source, result);");
                 builder.AppendLine("        return result;");
             }
@@ -2193,12 +2201,12 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.AppendLine("        if (source is null)");
                 builder.AppendLine("        {");
                 builder.Append("            registration.ClearStableIdentityValue(0, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(");");
                 builder.AppendLine("            return global::BunSharp.BunValue.Null;");
                 builder.AppendLine("        }");
                 builder.Append("        if (registration.TryGetStableIdentityValue(0, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(", source, out var cached))");
                 builder.AppendLine("        {");
                 builder.AppendLine("            return cached;");
@@ -2207,10 +2215,10 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.Append(ConvertToBunValue(property.PropertyType, "source", "context"));
                 builder.AppendLine(";");
                 builder.Append("        registration.ClearStableIdentityValue(0, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(");");
                 builder.Append("        registration.CacheStableIdentityValue(0, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(", source, result);");
                 builder.AppendLine("        return result;");
             }
@@ -2253,12 +2261,12 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.AppendLine("            throw;");
                 builder.AppendLine("        }");
                 builder.Append("        registration.ClearStableIdentityValue(0, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(");");
                 builder.AppendLine("        if (binding.HasCachedValue)");
                 builder.AppendLine("        {");
                 builder.Append("            registration.CacheStableIdentityValue(0, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(", nextValue!, binding.CachedValue, binding.OwnedReference);");
                 builder.AppendLine("        }");
             }
@@ -2298,12 +2306,12 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.Append(property.MemberName);
                 builder.AppendLine(" = nextValue;");
                 builder.Append("        registration.ClearStableIdentityValue(0, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(");");
                 builder.AppendLine("        if (nextValue is not null)");
                 builder.AppendLine("        {");
                 builder.Append("            registration.CacheStableIdentityValue(0, ");
-                builder.Append(CSharpLiteral(property.MemberName));
+                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(", nextValue, value);");
                 builder.AppendLine("        }");
             }
@@ -2321,8 +2329,9 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         }
     }
 
-    private static void AppendStaticMethod(StringBuilder builder, ExportedTypeModel model, ExportedMethodModel method)
+    private static void AppendStaticMethod(StringBuilder builder, ExportedTypeModel model, ExportedMethodModel method, IReadOnlyDictionary<string, int> stableMemberSlots)
     {
+        var stableMemberSlot = method.Stable ? GetStableMemberSlot(stableMemberSlots, method.MemberName) : -1;
         builder.Append("    private static global::BunSharp.BunValue ");
         builder.Append(method.WrapperName);
         builder.AppendLine("(global::BunSharp.BunContext context, global::BunSharp.BunValue thisValue, global::System.ReadOnlySpan<global::BunSharp.BunValue> args, nint userdata)");
@@ -2348,12 +2357,12 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.AppendLine("        if (result is null)");
             builder.AppendLine("        {");
             builder.Append("            registration.ClearStableIdentityValue(0, ");
-            builder.Append(CSharpLiteral(method.MemberName));
+            builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine(");");
             builder.AppendLine("            return global::BunSharp.BunValue.Null;");
             builder.AppendLine("        }");
             builder.Append("        if (registration.TryGetStableIdentityValue(0, ");
-            builder.Append(CSharpLiteral(method.MemberName));
+            builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine(", result, out var cached))");
             builder.AppendLine("        {");
             builder.AppendLine("            return cached;");
@@ -2362,10 +2371,10 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.Append(method.ReturnType.IsDelegate ? $"{method.DelegateFunctionHelperName}(context, result)" : ConvertToBunValue(method.ReturnType, "result", "context"));
             builder.AppendLine(";");
             builder.Append("        registration.ClearStableIdentityValue(0, ");
-            builder.Append(CSharpLiteral(method.MemberName));
+            builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine(");");
             builder.Append("        registration.CacheStableIdentityValue(0, ");
-            builder.Append(CSharpLiteral(method.MemberName));
+            builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine(", result, value);");
             builder.AppendLine("        return value;");
         }
