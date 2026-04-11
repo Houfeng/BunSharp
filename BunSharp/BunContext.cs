@@ -525,16 +525,16 @@ public unsafe sealed class BunContext
         return _runtime ?? throw new InvalidOperationException("This BunContext was created from an unmanaged callback and cannot retain managed resources.");
     }
 
-    public void RegisterCleanup(Action callback)
+    public IDisposable RegisterCleanup(Action callback)
     {
         ArgumentNullException.ThrowIfNull(callback);
-        GetOwningRuntime().RegisterCleanup(callback);
+        return GetOwningRuntime().RegisterCleanup(callback);
     }
 
-    internal void RegisterPreDestroyCleanup(Action callback)
+    public IDisposable RegisterPreDestroyCleanup(Action callback)
     {
         ArgumentNullException.ThrowIfNull(callback);
-        GetOwningRuntime().RegisterPreDestroyCleanup(callback);
+        return GetOwningRuntime().RegisterPreDestroyCleanup(callback);
     }
 
     private void VerifyThread()

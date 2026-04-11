@@ -3,6 +3,7 @@ namespace BunSharp;
 public sealed class JSObjectRef : IDisposable
 {
     private BunContext? _context;
+    private IDisposable? _cleanupRegistration;
     private BunValue _value;
     private int _disposed;
 
@@ -29,7 +30,7 @@ public sealed class JSObjectRef : IDisposable
         _value = value;
 
         context.Protect(value);
-        context.RegisterPreDestroyCleanup(ReleaseProtectedValue);
+        _cleanupRegistration = context.RegisterPreDestroyCleanup(ReleaseProtectedValue);
     }
 
     public BunContext Context
@@ -86,6 +87,7 @@ public sealed class JSObjectRef : IDisposable
         }
 
         var context = Interlocked.Exchange(ref _context, null);
+        Interlocked.Exchange(ref _cleanupRegistration, null)?.Dispose();
         var value = _value;
         _value = BunValue.Undefined;
 

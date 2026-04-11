@@ -7,8 +7,8 @@ public sealed class BunRuntime : IDisposable
 {
     private readonly HashSet<IDisposable> _ownedResources = [];
     private readonly Dictionary<BunValue, BunObjectFinalizerRegistration> _objectFinalizerRegistrations = [];
-    private readonly List<Action> _preDestroyCleanupCallbacks = [];
-    private readonly List<Action> _cleanupCallbacks = [];
+    private readonly LinkedList<CleanupRegistration> _preDestroyCleanupCallbacks = [];
+    private readonly LinkedList<CleanupRegistration> _cleanupCallbacks = [];
     private readonly int _threadId;
     private BunCallbackHandle? _eventCallbackHandle;
     private BunContext? _context;
@@ -198,12 +198,7 @@ public sealed class BunRuntime : IDisposable
             Interlocked.Exchange(ref _eventCallbackHandle, null)?.Dispose();
         }
 
-        foreach (var callback in _cleanupCallbacks)
-        {
-            callback();
-        }
-
-        _cleanupCallbacks.Clear();
+        RunCleanupCallbacks(_cleanupCallbacks);
 
         if (_objectFinalizerRegistrations.Count > 0)
         {
@@ -261,16 +256,16 @@ public sealed class BunRuntime : IDisposable
             _objectFinalizerRegistrations.Remove(target);
     }
 
-    internal void RegisterCleanup(Action callback)
+    internal IDisposable RegisterCleanup(Action callback)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _cleanupCallbacks.Add(callback);
+        return RegisterCleanupCore(CleanupPhase.PostDestroy, callback);
     }
 
-    internal void RegisterPreDestroyCleanup(Action callback)
+    internal IDisposable RegisterPreDestroyCleanup(Action callback)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _preDestroyCleanupCallbacks.Add(callback);
+        return RegisterCleanupCore(CleanupPhase.PreDestroy, callback);
     }
 
     internal void VerifyThread()
@@ -293,20 +288,108 @@ public sealed class BunRuntime : IDisposable
         };
     }
 
-    private static void RunCleanupCallbacks(List<Action> callbacks)
+    private IDisposable RegisterCleanupCore(CleanupPhase phase, Action callback)
     {
-        foreach (var callback in callbacks)
+        ArgumentNullException.ThrowIfNull(callback);
+
+        var registration = new CleanupRegistration(this, phase, callback);
+        registration.Attach(GetCleanupRegistrations(phase).AddLast(registration));
+        return registration;
+    }
+
+    private LinkedList<CleanupRegistration> GetCleanupRegistrations(CleanupPhase phase)
+    {
+        return phase switch
         {
+            CleanupPhase.PreDestroy => _preDestroyCleanupCallbacks,
+            CleanupPhase.PostDestroy => _cleanupCallbacks,
+            _ => throw new ArgumentOutOfRangeException(nameof(phase), phase, "Unsupported cleanup phase."),
+        };
+    }
+
+    private void RemoveCleanupRegistration(CleanupRegistration registration)
+    {
+        var node = registration.Node;
+        if (node is not null)
+        {
+            GetCleanupRegistrations(registration.Phase).Remove(node);
+        }
+
+        registration.Detach();
+    }
+
+    private static void RunCleanupCallbacks(LinkedList<CleanupRegistration> callbacks)
+    {
+        var node = callbacks.First;
+        while (node is not null)
+        {
+            var next = node.Next;
+            callbacks.Remove(node);
+            var callback = node.Value.TakeCallback();
+
             try
             {
-                callback();
+                callback?.Invoke();
             }
             catch
             {
             }
+
+            node = next;
+        }
+    }
+
+    private enum CleanupPhase
+    {
+        PreDestroy,
+        PostDestroy,
+    }
+
+    private sealed class CleanupRegistration : IDisposable
+    {
+        private BunRuntime? _owner;
+        private Action? _callback;
+
+        public CleanupRegistration(BunRuntime owner, CleanupPhase phase, Action callback)
+        {
+            _owner = owner;
+            _callback = callback;
+            Phase = phase;
         }
 
-        callbacks.Clear();
+        public CleanupPhase Phase { get; }
+
+        public LinkedListNode<CleanupRegistration>? Node { get; private set; }
+
+        public void Attach(LinkedListNode<CleanupRegistration> node)
+        {
+            Node = node;
+        }
+
+        public Action? TakeCallback()
+        {
+            var callback = _callback;
+            Detach();
+            return callback;
+        }
+
+        public void Detach()
+        {
+            _owner = null;
+            _callback = null;
+            Node = null;
+        }
+
+        public void Dispose()
+        {
+            var owner = _owner;
+            if (owner is null)
+            {
+                return;
+            }
+
+            owner.RemoveCleanupRegistration(this);
+        }
     }
 }
 

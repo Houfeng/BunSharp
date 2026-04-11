@@ -1661,7 +1661,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("            var releaseHandleFinalizer = @class.CreatePersistentFinalizer(ReleaseHandle, contextHandle);");
         builder.AppendLine("            var registration = new RegistrationState(@class, constructor, releaseHandleFinalizer, contextHandle);");
         builder.AppendLine("            Registrations.Add(contextHandle, registration);");
-        builder.AppendLine("            context.RegisterCleanup(() =>");
+        builder.AppendLine("            context.RegisterPreDestroyCleanup(() =>");
         builder.AppendLine("            {");
         builder.AppendLine("                lock (SyncRoot)");
         builder.AppendLine("                {");
