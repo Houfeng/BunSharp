@@ -1,9 +1,9 @@
-// declare class DemoGreeter {
-//   constructor(name: string, payload: Uint8Array);
-//   static version: string;
-//   name: string;
-//   describe(): string;
-// }
+declare class DemoGreeter {
+  constructor(name: string, payload: Uint8Array);
+  static version: string;
+  name: string;
+  describe(): string;
+}
 
 debugger;
 
