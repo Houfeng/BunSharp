@@ -79,6 +79,14 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor UnsupportedMemberAccessibilityDescriptor = new(
+        id: "LBSG008",
+        title: "Unsupported export member accessibility",
+        messageFormat: "Member '{0}' cannot use JSExportAttribute with accessibility '{1}'. JSExport supports public members, and explicitly annotated internal members only.",
+        category: DiagnosticCategory,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
     private static readonly SymbolDisplayFormat FullyQualifiedFormat = new(
         globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Included,
         typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
@@ -237,9 +245,18 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             switch (member)
             {
                 case IMethodSymbol method when method.MethodKind == MethodKind.Ordinary:
-                    var hasExplicitMethodExport = HasAttribute(method, jsExportAttributeSymbol);
+                    var hasExplicitMethodExport = TryGetExplicitEnabledExport(method, jsExportAttributeSymbol, out _);
                     if (!IsExportAccessible(method.DeclaredAccessibility, hasExplicitMethodExport))
                     {
+                        if (hasExplicitMethodExport)
+                        {
+                            context.ReportDiagnostic(Diagnostic.Create(
+                                UnsupportedMemberAccessibilityDescriptor,
+                                method.Locations.FirstOrDefault(),
+                                method.Name,
+                                method.DeclaredAccessibility.ToString().ToLowerInvariant()));
+                        }
+
                         continue;
                     }
 
@@ -288,11 +305,20 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                         continue;
                     }
 
-                    var hasExplicitPropertyExport = HasAttribute(property, jsExportAttributeSymbol);
+                    var hasExplicitPropertyExport = TryGetExplicitEnabledExport(property, jsExportAttributeSymbol, out _);
                     var hasExportableGetter = IsExportAccessible(property.GetMethod?.DeclaredAccessibility, hasExplicitPropertyExport);
                     var hasExportableSetter = IsExportAccessible(property.SetMethod?.DeclaredAccessibility, hasExplicitPropertyExport);
                     if (!hasExportableGetter && !hasExportableSetter)
                     {
+                        if (hasExplicitPropertyExport)
+                        {
+                            context.ReportDiagnostic(Diagnostic.Create(
+                                UnsupportedMemberAccessibilityDescriptor,
+                                property.Locations.FirstOrDefault(),
+                                property.Name,
+                                property.DeclaredAccessibility.ToString().ToLowerInvariant()));
+                        }
+
                         continue;
                     }
 
@@ -785,6 +811,17 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
         rule = new ExportRule(true, null, stable: false, hasStableOption: false);
         return !HasAttribute(symbol, jsExportAttributeSymbol) || rule.Enabled;
+    }
+
+    private static bool TryGetExplicitEnabledExport(ISymbol symbol, INamedTypeSymbol jsExportAttributeSymbol, out ExportRule rule)
+    {
+        if (!HasAttribute(symbol, jsExportAttributeSymbol))
+        {
+            rule = default;
+            return false;
+        }
+
+        return TryResolveExportRule(symbol, jsExportAttributeSymbol, out rule) && rule.Enabled;
     }
 
     private static bool IsExportAccessible(Accessibility? accessibility, bool hasExplicitExport)
