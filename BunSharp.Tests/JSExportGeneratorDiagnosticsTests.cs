@@ -107,6 +107,41 @@ public sealed class UnsupportedParameterDemo
     Assert.Contains("System.DateTime", diagnostic.GetMessage());
   }
 
+  [Fact]
+  public void PrivateNestedExportedClass_ReportsCompileTimeDiagnostic()
+  {
+    var diagnostics = RunGenerator(@"
+using BunSharp;
+
+public sealed class Outer
+{
+  [JSExport]
+  private sealed class Hidden
+  {
+    public Hidden() { }
+  }
+}");
+
+    var diagnostic = Assert.Single(diagnostics, d => d.Id == "LBSG009");
+    Assert.Contains("Outer.Hidden", diagnostic.GetMessage());
+    Assert.Contains("private", diagnostic.GetMessage());
+  }
+
+  [Fact]
+  public void InternalTopLevelExportedClass_DoesNotReportTypeAccessibilityDiagnostic()
+  {
+    var diagnostics = RunGenerator(@"
+using BunSharp;
+
+[JSExport]
+internal sealed class InternalExportedType
+{
+  public InternalExportedType() { }
+}");
+
+    Assert.DoesNotContain(diagnostics, d => d.Id == "LBSG009");
+  }
+
   private static ImmutableArray<Diagnostic> RunGenerator(string source)
   {
     var syntaxTree = CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.Latest));

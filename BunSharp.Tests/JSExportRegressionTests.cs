@@ -227,6 +227,22 @@ public sealed class InternalExplicitMemberDemo
   }
 }
 
+public static class NestedExportHost
+{
+  [JSExport]
+  public sealed class NestedEchoDemo
+  {
+    public NestedEchoDemo()
+    {
+    }
+
+    public string echo(string value)
+    {
+      return $"nested:{value}";
+    }
+  }
+}
+
 [JSExport]
 public sealed class WrapperCacheChild
 {
@@ -529,6 +545,19 @@ public sealed class JSExportRegressionTests
   }
 
   [Fact]
+  public void NestedExportedClass_CanBeExportedAndUsed()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      const demo = new NestedEchoDemo();
+      return demo.echo('ok');
+    })()");
+
+    Assert.Equal("nested:ok", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
   public void ManagedWrapperCache_ReusesJsWrappersForSameManagedInstance()
   {
     using var env = CreateEnvironment();
@@ -562,6 +591,7 @@ public sealed class JSExportRegressionTests
     env.Context.ExportType<DelegateMethodDemo>();
     env.Context.ExportType<ThrowingReferenceSetterDemo>();
     env.Context.ExportType<InternalExplicitMemberDemo>();
+    env.Context.ExportType<NestedExportHost.NestedEchoDemo>();
     env.Context.ExportType<WrapperCacheChild>();
     env.Context.ExportType<WrapperCacheParent>();
     return env;

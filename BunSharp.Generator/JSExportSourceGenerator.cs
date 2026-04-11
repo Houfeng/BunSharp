@@ -87,6 +87,14 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor UnsupportedTypeAccessibilityDescriptor = new(
+        id: "LBSG009",
+        title: "Unsupported export type accessibility",
+        messageFormat: "Type '{0}' cannot use JSExportAttribute with accessibility '{1}'. JSExport supports public and internal classes only.",
+        category: DiagnosticCategory,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
     private static readonly SymbolDisplayFormat FullyQualifiedFormat = new(
         globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Included,
         typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
@@ -201,6 +209,16 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
         if (!TryResolveExportRule(type, jsExportAttributeSymbol, out var typeRule) || !typeRule.Enabled)
         {
+            return false;
+        }
+
+        if (!IsExportableTypeAccessibility(type.DeclaredAccessibility))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                UnsupportedTypeAccessibilityDescriptor,
+                type.Locations.FirstOrDefault(),
+                type.ToDisplayString(),
+                type.DeclaredAccessibility.ToString().ToLowerInvariant()));
             return false;
         }
 
@@ -832,6 +850,11 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             Accessibility.Internal when hasExplicitExport => true,
             _ => false,
         };
+    }
+
+    private static bool IsExportableTypeAccessibility(Accessibility accessibility)
+    {
+        return accessibility is Accessibility.Public or Accessibility.Internal;
     }
 
     private static bool HasAttribute(ISymbol symbol, INamedTypeSymbol attributeSymbol)
