@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="BunSharp.Benchmarks/BunSharp.Benchmarks.csproj" />
   <Project Path="BunSharp.Tests/BunSharp.Tests.csproj" />
   <Project Path="BunSharp.Demo/BunSharp.Demo.csproj" />
   <Project Path="BunSharp.Generator/BunSharp.Generator.csproj" />

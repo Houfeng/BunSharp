@@ -29,6 +29,32 @@
         "--ucr"
       ],
       "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "run BunSharp.Benchmarks (Release)",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "${workspaceFolder}/BunSharp.Benchmarks/BunSharp.Benchmarks.csproj",
+        "-c",
+        "Release"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "publish BunSharp.Benchmarks (AOT)",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "publish",
+        "${workspaceFolder}/BunSharp.Benchmarks/BunSharp.Benchmarks.csproj",
+        "-c",
+        "Release",
+        "--ucr"
+      ],
+      "problemMatcher": "$msCompile"
     }
   ]
 }

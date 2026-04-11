@@ -7,17 +7,17 @@ if (typeof ByteArrayRoundtripBenchmarkBridge !== 'function') {
   throw new Error('BenchmarkBridge is not available on globalThis.');
 }
 
-const byteArrayRoundtripHost = new ByteArrayRoundtripBenchmarkBridge();
-
 for (let index = 0; index < byteArrayRoundtripPayload.length; index++) {
-  byteArrayRoundtripPayload[index] = index & 0xff;
+  byteArrayRoundtripPayload[index] = index & 255;
 }
+
+const byteArrayRoundtripHost = new ByteArrayRoundtripBenchmarkBridge();
 
 function byteArrayRoundtripRound() {
   let checksum = 0;
   for (let index = 0; index < byteArrayRoundtripIterations; index++) {
-    const returned = byteArrayRoundtripHost.echoBytes(byteArrayRoundtripPayload);
-    checksum += returned[index & 0xff] + returned.length;
+    const result = byteArrayRoundtripHost.echoBytes(byteArrayRoundtripPayload);
+    checksum += result[index & (result.length - 1)];
   }
   return checksum;
 }
