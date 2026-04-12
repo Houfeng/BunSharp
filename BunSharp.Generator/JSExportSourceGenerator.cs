@@ -1018,10 +1018,71 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         return "CreateArray_" + GetArrayElementTypeSuffix(arrayType.ElementType!);
     }
 
+    private static string GetArrayDisposeHelperName(TypeRefModel arrayType)
+    {
+        return "DisposeConstructedArray_" + GetArrayElementTypeSuffix(arrayType.ElementType!);
+    }
+
+    private static bool TypeNeedsArrayReadCleanup(TypeRefModel type)
+    {
+        return type.Kind switch
+        {
+            ExportValueKind.JSObjectRef => true,
+            ExportValueKind.JSFunctionRef => true,
+            ExportValueKind.JSArrayRef => true,
+            ExportValueKind.JSArrayBufferRef => true,
+            ExportValueKind.JSTypedArrayRef => true,
+            ExportValueKind.JSBufferRef => true,
+            ExportValueKind.Array => TypeNeedsArrayReadCleanup(type.ElementType!),
+            _ => false,
+        };
+    }
+
     private static void AppendCommonHelpers(StringBuilder builder, List<TypeRefModel> arrayTypes)
     {
         builder.AppendLine("internal static class __JSExportCommon");
         builder.AppendLine("{");
+        builder.AppendLine("    private sealed class NativeBufferOwner : global::System.IDisposable");
+        builder.AppendLine("    {");
+        builder.AppendLine("        private nint _buffer;");
+        builder.AppendLine("        private nint _selfHandle;");
+        builder.AppendLine("        private global::System.IDisposable? _cleanupRegistration;");
+        builder.AppendLine();
+        builder.AppendLine("        public NativeBufferOwner(nint buffer)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            _buffer = buffer;");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        public nint UserData => _selfHandle;");
+        builder.AppendLine();
+        builder.AppendLine("        public void AttachCleanupRegistration(global::System.IDisposable cleanupRegistration)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            _cleanupRegistration = cleanupRegistration;");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        public void AttachHandle(global::System.Runtime.InteropServices.GCHandle handle)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            _selfHandle = global::System.Runtime.InteropServices.GCHandle.ToIntPtr(handle);");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        public void Dispose()");
+        builder.AppendLine("        {");
+        builder.AppendLine("            var buffer = global::System.Threading.Interlocked.Exchange(ref _buffer, 0);");
+        builder.AppendLine("            if (buffer != 0)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                Marshal.FreeHGlobal(buffer);");
+        builder.AppendLine("            }");
+        builder.AppendLine();
+        builder.AppendLine("            global::System.Threading.Interlocked.Exchange(ref _cleanupRegistration, null)?.Dispose();");
+        builder.AppendLine();
+        builder.AppendLine("            var selfHandle = global::System.Threading.Interlocked.Exchange(ref _selfHandle, 0);");
+        builder.AppendLine("            if (selfHandle != 0)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                global::System.Runtime.InteropServices.GCHandle.FromIntPtr(selfHandle).Free();");
+        builder.AppendLine("            }");
+        builder.AppendLine("        }");
+        builder.AppendLine("    }");
+        builder.AppendLine();
         builder.AppendLine("    public static void EnsurePropertySet(bool result, string name)");
         builder.AppendLine("    {");
         builder.AppendLine("        if (!result)");
@@ -1035,6 +1096,20 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        if (!result)");
         builder.AppendLine("        {");
         builder.AppendLine("            throw new InvalidOperationException($\"Failed to set JS array element at index {index}.\");");
+        builder.AppendLine("        }");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    private static void ReleaseOwnedUnmanagedBuffer(nint userdata)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        if (userdata == 0)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            return;");
+        builder.AppendLine("        }");
+        builder.AppendLine();
+        builder.AppendLine("        var handle = global::System.Runtime.InteropServices.GCHandle.FromIntPtr(userdata);");
+        builder.AppendLine("        if (handle.Target is NativeBufferOwner owner)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            owner.Dispose();");
         builder.AppendLine("        }");
         builder.AppendLine("    }");
         builder.AppendLine();
@@ -1236,14 +1311,17 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        if (context.CanRetainManagedResources)");
         builder.AppendLine("        {");
         builder.AppendLine("            var buffer = Marshal.AllocHGlobal(value.Length);");
+        builder.AppendLine("            var owner = new NativeBufferOwner(buffer);");
         builder.AppendLine("            try");
         builder.AppendLine("            {");
         builder.AppendLine("                Marshal.Copy(value, 0, buffer, value.Length);");
-        builder.AppendLine("                return context.CreateTypedArray(global::BunSharp.Interop.BunTypedArrayKind.Uint8Array, buffer, checked((nuint)value.Length), ReleaseUnmanagedBuffer, buffer);");
+        builder.AppendLine("                owner.AttachCleanupRegistration(context.RegisterCleanup(owner.Dispose));");
+        builder.AppendLine("                owner.AttachHandle(global::System.Runtime.InteropServices.GCHandle.Alloc(owner));");
+        builder.AppendLine("                return context.CreateTypedArray(global::BunSharp.Interop.BunTypedArrayKind.Uint8Array, buffer, checked((nuint)value.Length), ReleaseOwnedUnmanagedBuffer, owner.UserData);");
         builder.AppendLine("            }");
         builder.AppendLine("            catch");
         builder.AppendLine("            {");
-        builder.AppendLine("                Marshal.FreeHGlobal(buffer);");
+        builder.AppendLine("                owner.Dispose();");
         builder.AppendLine("                throw;");
         builder.AppendLine("            }");
         builder.AppendLine("        }");
@@ -1280,6 +1358,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         {
             AppendArrayReadHelper(builder, arrayType);
             AppendArrayWriteHelper(builder, arrayType);
+            AppendArrayDisposeHelper(builder, arrayType);
         }
 
         builder.AppendLine("}");
@@ -1339,6 +1418,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         var elementType = arrayType.ElementType!;
         var helperName = GetArrayReadHelperName(arrayType);
         var csharpElementType = elementType.FullyQualifiedTypeName;
+        var needsCleanup = TypeNeedsArrayReadCleanup(arrayType);
+        var disposeHelperName = needsCleanup ? GetArrayDisposeHelperName(arrayType) : null;
         // For nested arrays (e.g. string[][]), the allocation needs the size in the
         // outermost bracket: new string[size][]. We use the array type's own FQN and
         // insert the size expression into the first "[]".
@@ -1365,6 +1446,11 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("            return arr;");
         builder.AppendLine("        }");
         builder.AppendLine();
+        if (needsCleanup)
+        {
+            builder.AppendLine("        var constructedCount = 0;");
+            builder.AppendLine();
+        }
         builder.AppendLine("        var buffer = global::System.Buffers.ArrayPool<global::BunSharp.BunValue>.Shared.Rent(global::System.Math.Min(arr.Length, ArrayTransferBatchSize));");
         builder.AppendLine("        try");
         builder.AppendLine("        {");
@@ -1378,14 +1464,67 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.Append("                    arr[offset + i] = ");
         builder.Append(ElementReadExpression(elementType, "chunk[i]", "context"));
         builder.AppendLine(";");
+        if (needsCleanup)
+        {
+            builder.AppendLine("                    constructedCount++;");
+        }
         builder.AppendLine("                }");
         builder.AppendLine("            }");
         builder.AppendLine("        }");
+        if (needsCleanup)
+        {
+            builder.AppendLine("        catch");
+            builder.AppendLine("        {");
+            builder.Append("            ");
+            builder.Append(disposeHelperName);
+            builder.AppendLine("(arr, constructedCount);");
+            builder.AppendLine("            throw;");
+            builder.AppendLine("        }");
+        }
         builder.AppendLine("        finally");
         builder.AppendLine("        {");
         builder.AppendLine("            global::System.Buffers.ArrayPool<global::BunSharp.BunValue>.Shared.Return(buffer);");
         builder.AppendLine("        }");
         builder.AppendLine("        return arr;");
+        builder.AppendLine("    }");
+    }
+
+    private static void AppendArrayDisposeHelper(StringBuilder builder, TypeRefModel arrayType)
+    {
+        if (!TypeNeedsArrayReadCleanup(arrayType))
+        {
+            return;
+        }
+
+        var elementType = arrayType.ElementType!;
+        var helperName = GetArrayDisposeHelperName(arrayType);
+
+        builder.AppendLine();
+        builder.Append("    private static void ");
+        builder.Append(helperName);
+        builder.Append("(");
+        builder.Append(arrayType.FullyQualifiedTypeName);
+        builder.AppendLine(" value, int count)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        for (var i = 0; i < count; i++)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            var item = value[i];");
+        builder.AppendLine("            if (item is null)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                continue;");
+        builder.AppendLine("            }");
+        builder.AppendLine();
+        if (elementType.Kind == ExportValueKind.Array)
+        {
+            builder.Append("            ");
+            builder.Append(GetArrayDisposeHelperName(elementType));
+            builder.AppendLine("(item, item.Length);");
+        }
+        else
+        {
+            builder.AppendLine("            item.Dispose();");
+        }
+        builder.AppendLine("        }");
         builder.AppendLine("    }");
     }
 

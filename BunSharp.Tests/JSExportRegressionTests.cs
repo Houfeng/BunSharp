@@ -197,6 +197,24 @@ public sealed class ArrayMarshallingDemo
 }
 
 [JSExport]
+public sealed class ReferenceArrayMarshallingDemo
+{
+  public ReferenceArrayMarshallingDemo()
+  {
+  }
+
+  public int countBuffers(JSBufferRef[] values)
+  {
+    return values.Length;
+  }
+
+  public int countNestedBuffers(JSBufferRef[][] values)
+  {
+    return values.Length;
+  }
+}
+
+[JSExport]
 public sealed class DelegatePropertyDemo
 {
   public DelegatePropertyDemo()
@@ -443,6 +461,32 @@ public sealed class JSExportRegressionTests
     Assert.Equal(BunTypedArrayKind.Uint8Array, info.Kind);
     Assert.Equal((nuint)payload.Length, info.ElementCount);
     Assert.Equal(payload, new JSBufferRef(env.Context, value).ToArray());
+  }
+
+  [Fact]
+  public void ByteArrayMarshalling_FastPath_RegistersRuntimeCleanupFallback()
+  {
+    using var env = CreateEnvironment();
+
+    var initialCount = GetCleanupCount(env.Runtime, "_cleanupCallbacks");
+
+    var value = BunSharp.Generated.__JSExportCommon.CreateByteArray(env.Context, [1, 2, 3, 4]);
+
+    Assert.True(env.Context.TryGetTypedArray(value, out var info));
+    Assert.Equal(BunTypedArrayKind.Uint8Array, info.Kind);
+    Assert.Equal(initialCount + 1, GetCleanupCount(env.Runtime, "_cleanupCallbacks"));
+  }
+
+  [Fact]
+  public void ReferenceArrayMarshalling_FailureDisposesPreviouslyConstructedNestedWrappers()
+  {
+    using var env = CreateEnvironment();
+
+    var initialCount = GetCleanupCount(env.Runtime, "_preDestroyCleanupCallbacks");
+    var value = env.Context.Evaluate("[[new Uint8Array([1])], [new Uint8Array([2]), new Uint32Array([3])]]");
+
+    Assert.Throws<ArgumentException>(() => BunSharp.Generated.__JSExportCommon.ReadArray_Array_JSBufferRef(env.Context, value));
+    Assert.Equal(initialCount, GetCleanupCount(env.Runtime, "_preDestroyCleanupCallbacks"));
   }
 
   [Fact]
@@ -794,6 +838,7 @@ public sealed class JSExportRegressionTests
     env.Context.ExportType<StableIdentityMethodDemo>();
     env.Context.ExportType<ReferenceSemanticsDemo>();
     env.Context.ExportType<ArrayMarshallingDemo>();
+    env.Context.ExportType<ReferenceArrayMarshallingDemo>();
     env.Context.ExportType<DelegatePropertyDemo>();
     env.Context.ExportType<DelegateMethodDemo>();
     env.Context.ExportType<ThrowingReferenceSetterDemo>();
@@ -820,11 +865,26 @@ public sealed class JSExportRegressionTests
   {
     private readonly BunRuntime _runtime = BunRuntime.Create();
 
+    public BunRuntime Runtime => _runtime;
+
     public BunContext Context => _runtime.Context;
 
     public void Dispose()
     {
       _runtime.Dispose();
     }
+  }
+
+  private static int GetCleanupCount(BunRuntime runtime, string fieldName)
+  {
+    var field = typeof(BunRuntime).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+    Assert.NotNull(field);
+
+    var value = field!.GetValue(runtime);
+    Assert.NotNull(value);
+
+    var countProperty = value!.GetType().GetProperty("Count", BindingFlags.Instance | BindingFlags.Public);
+    Assert.NotNull(countProperty);
+    return (int)countProperty!.GetValue(value)!;
   }
 }

@@ -30,8 +30,33 @@ public sealed class JSObjectRef : IDisposable
         _context = context;
         _value = value;
 
-        context.Protect(value);
-        _cleanupRegistration = context.RegisterPreDestroyCleanup(ReleaseProtectedValue);
+        var protectedValue = false;
+        try
+        {
+            context.Protect(value);
+            protectedValue = true;
+            _cleanupRegistration = context.RegisterPreDestroyCleanup(ReleaseProtectedValue);
+        }
+        catch (Exception ex)
+        {
+            _cleanupRegistration = null;
+            _value = BunValue.Undefined;
+            _context = null;
+
+            if (protectedValue)
+            {
+                try
+                {
+                    context.Unprotect(value);
+                }
+                catch (Exception rollbackEx)
+                {
+                    throw new AggregateException("Failed to initialize JSObjectRef and rollback the protected JS reference.", ex, rollbackEx);
+                }
+            }
+
+            throw;
+        }
     }
 
     public BunContext Context
