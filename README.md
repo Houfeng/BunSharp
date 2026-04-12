@@ -16,7 +16,7 @@ BunSharp is a .NET binding for the [libbun](https://github.com/Houfeng/libbun) e
 - Evaluate JavaScript and TypeScript from .NET
 - Register host functions on the JS global object
 - Export C# classes with `JSExportAttribute`
-- Support instance methods, instance properties, selected static members, and `byte[]` ↔ `Uint8Array`
+- Support instance methods, instance properties, selected static members, and dedicated `byte[]` binary marshalling via `Uint8Array` / `ArrayBuffer`
 - Support `T[]` arrays as parameters and return values, including nested arrays (`T[][]`) and arrays of exported classes
 - Support explicit persistent JS references via `JSObjectRef`, `JSFunctionRef`, `JSArrayRef`, `JSArrayBufferRef`, `JSTypedArrayRef`, and `JSBufferRef`
 - No runtime reflection; AOT friendly
@@ -174,7 +174,7 @@ console.log(svc.makeGreeters(["Alice", "Bob"])[0].describe());
 console.log(DataService.tags);
 ```
 
-> **Note:** `byte[]` always maps to `Uint8Array` via a zero-copy path and is independent of the general `T[]` mechanism.
+> **Note:** `byte[]` does not use the general `T[]` mapper. JavaScript inputs must be `Uint8Array` or `ArrayBuffer`, managed `byte[]` values are exported as `Uint8Array`, and ordinary JS arrays are rejected for `byte[]` parameters and properties.
 
 ## Explicit Reference Types
 

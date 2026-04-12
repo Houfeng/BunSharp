@@ -1,4 +1,6 @@
+using System.Reflection;
 using BunSharp;
+using BunSharp.Interop;
 using Xunit;
 
 namespace BunSharp.Tests;
@@ -388,6 +390,62 @@ public sealed class JSExportRegressionTests
   }
 
   [Fact]
+  public void ByteArrayMarshalling_UsesUint8ArrayAcceptsArrayBufferAndRejectsPlainArrays()
+  {
+    using var env = CreateEnvironment();
+
+    var plainArray = env.Context.Evaluate("[1, 2, 3]");
+    Assert.Throws<InvalidOperationException>(() => BunSharp.Generated.__JSExportCommon.ReadByteArray(env.Context, plainArray));
+
+    var result = env.Context.Evaluate(@"(() => {
+      const demo = new StableIdentityPropertyDemo();
+      const initial = demo.payload;
+
+      demo.replacePayload(new Uint8Array([7, 8, 9]).buffer);
+      const fromBuffer = demo.payload;
+
+      let plainArrayResult = 'no-throw';
+      try {
+        demo.replacePayload([1, 2, 3]);
+      } catch {
+        plainArrayResult = 'throw';
+      }
+
+      const afterPlainArray = demo.payload;
+
+      return [
+        initial instanceof Uint8Array,
+        Array.isArray(initial),
+        fromBuffer instanceof Uint8Array,
+        Array.isArray(fromBuffer),
+        Array.from(fromBuffer).join(','),
+        plainArrayResult,
+        afterPlainArray instanceof Uint8Array,
+        Array.from(afterPlainArray).join(',')
+      ].join('|');
+    })()");
+
+    Assert.Equal("true|false|true|false|7,8,9|no-throw|true|7,8,9", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
+  public void ByteArrayMarshalling_FallbackPath_UsesUint8ArrayAndPreservesPayload()
+  {
+    using var env = CreateEnvironment();
+
+    var callbackContext = CreateUnownedContext(env.Context);
+    var payload = Enumerable.Range(0, 513).Select(index => (byte)(index % 251)).ToArray();
+
+    var value = BunSharp.Generated.__JSExportCommon.CreateByteArray(callbackContext, payload);
+
+    Assert.False(env.Context.IsArray(value));
+    Assert.True(env.Context.TryGetTypedArray(value, out var info));
+    Assert.Equal(BunTypedArrayKind.Uint8Array, info.Kind);
+    Assert.Equal((nuint)payload.Length, info.ElementCount);
+    Assert.Equal(payload, new JSBufferRef(env.Context, value).ToArray());
+  }
+
+  [Fact]
   public void ExplicitReferenceMembers_PreserveExpectedReferenceAndSharedBufferSemantics()
   {
     using var env = CreateEnvironment();
@@ -744,6 +802,18 @@ public sealed class JSExportRegressionTests
     env.Context.ExportType<WrapperCacheChild>();
     env.Context.ExportType<WrapperCacheParent>();
     return env;
+  }
+
+  private static BunContext CreateUnownedContext(BunContext ownedContext)
+  {
+    var constructor = typeof(BunContext).GetConstructor(
+      BindingFlags.Instance | BindingFlags.NonPublic,
+      binder: null,
+      [typeof(nint)],
+      modifiers: null);
+
+    Assert.NotNull(constructor);
+    return (BunContext)constructor!.Invoke([ownedContext.Handle]);
   }
 
   private sealed class TestEnvironment : IDisposable

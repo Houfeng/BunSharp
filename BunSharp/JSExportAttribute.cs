@@ -5,6 +5,9 @@ namespace BunSharp;
 /// Public members of an exported class are included by default unless they are explicitly disabled.
 /// </summary>
 /// <remarks>
+/// Exported <c>byte[]</c> values use dedicated binary marshalling rather than the general <c>T[]</c>
+/// array mapper. JavaScript inputs must be <c>Uint8Array</c> or <c>ArrayBuffer</c>, and managed
+/// <c>byte[]</c> values are surfaced back to JavaScript as <c>Uint8Array</c> rather than ordinary JS arrays.
 /// The generator rejects unsupported static export shapes at compile time.
 /// Static JS reference properties and static method return values that use JSObjectRef, JSFunctionRef,
 /// JSArrayRef, JSArrayBufferRef, JSTypedArrayRef, or JSBufferRef report BSG010.
