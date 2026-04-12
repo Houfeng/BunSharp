@@ -238,6 +238,8 @@ Repeated JS reads or method calls that observe the same managed array reference 
 
 `Stable` applies only to exported properties and method return values. It does not apply to constructors or parameters. If you need to retain an incoming plain `byte[]` or `T[]`, store it in your own state. If you need the original JS object identity or shared backing storage itself, use explicit reference wrappers instead of `Stable`.
 
+Current implementation note: when ordinary C# code directly reassigns a `Stable` property, the existing JS-side cache is not cleared immediately. It is replaced on the next related JS read, or released during object or runtime cleanup.
+
 > **Current scope:** `Stable` is supported on exported `byte[]` and `T[]` properties and method return values, plus delegate properties and delegate method return values where stable function-reference semantics are the default.
 
 ## Delegates
