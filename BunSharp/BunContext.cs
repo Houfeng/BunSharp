@@ -208,6 +208,36 @@ public unsafe sealed class BunContext
         return BunNative.GetIndex(Handle, target, index);
     }
 
+    public bool TryGetArrayRange(BunValue target, uint start, Span<BunValue> values)
+    {
+        VerifyThread();
+
+        if (values.IsEmpty)
+        {
+            return BunNative.GetArrayRange(Handle, target, start, 0, null) != 0;
+        }
+
+        fixed (BunValue* valuesPointer = values)
+        {
+            return BunNative.GetArrayRange(Handle, target, start, checked((uint)values.Length), valuesPointer) != 0;
+        }
+    }
+
+    public bool TrySetArrayRange(BunValue target, uint start, ReadOnlySpan<BunValue> values)
+    {
+        VerifyThread();
+
+        if (values.IsEmpty)
+        {
+            return BunNative.SetArrayRange(Handle, target, start, 0, null) != 0;
+        }
+
+        fixed (BunValue* valuesPointer = values)
+        {
+            return BunNative.SetArrayRange(Handle, target, start, checked((uint)values.Length), valuesPointer) != 0;
+        }
+    }
+
     public bool DefineGetter(BunValue target, string key, BunManagedGetter getter, bool dontEnum = false, bool dontDelete = false)
     {
         ArgumentNullException.ThrowIfNull(key);

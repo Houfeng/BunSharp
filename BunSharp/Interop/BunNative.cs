@@ -517,6 +517,12 @@ public static unsafe partial class BunNative
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_get_index")]
     public static partial BunValue GetIndex(nint context, BunValue @object, uint index);
 
+    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_array_get_range")]
+    public static partial int GetArrayRange(nint context, BunValue array, uint start, uint count, BunValue* outValues);
+
+    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_array_set_range")]
+    public static partial int SetArrayRange(nint context, BunValue array, uint start, uint count, BunValue* values);
+
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_define_getter")]
     private static partial int DefineGetterCore(nint context, BunValue @object, byte* key, nuint keyLength, nint getter, nint userdata, int dontEnum, int dontDelete);
 

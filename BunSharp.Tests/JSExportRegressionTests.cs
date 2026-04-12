@@ -142,6 +142,59 @@ public sealed class ReferenceSemanticsDemo
 }
 
 [JSExport]
+public sealed class ArrayMarshallingDemo
+{
+  private int[] _numbers = [];
+
+  public ArrayMarshallingDemo()
+  {
+  }
+
+  public int[] Numbers
+  {
+    get => _numbers;
+    set => _numbers = value;
+  }
+
+  public int[] echoNumbers(int[] values)
+  {
+    return values;
+  }
+
+  public string[] echoStrings(string[] values)
+  {
+    return values;
+  }
+
+  public int[][] echoNestedNumbers(int[][] values)
+  {
+    return values;
+  }
+
+  public int[] createSequence(int count)
+  {
+    var result = new int[count];
+    for (var i = 0; i < count; i++)
+    {
+      result[i] = checked((i * 2) + 1);
+    }
+
+    return result;
+  }
+
+  public int sumNumbers(int[] values)
+  {
+    var sum = 0;
+    for (var i = 0; i < values.Length; i++)
+    {
+      sum += values[i];
+    }
+
+    return sum;
+  }
+}
+
+[JSExport]
 public sealed class DelegatePropertyDemo
 {
   public DelegatePropertyDemo()
@@ -388,6 +441,44 @@ public sealed class JSExportRegressionTests
     })()");
 
     Assert.Equal("true|true|true|true|callback:ok|callback2:swap|missing|3|true|42|11|-1", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
+  public void PlainArrayMarshalling_PreservesSemanticsForLargeAndNestedArrays()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      const demo = new ArrayMarshallingDemo();
+      const numbers = Array.from({ length: 513 }, (_, index) => index - 256);
+      const echoed = demo.echoNumbers(numbers);
+      demo.numbers = numbers;
+      const propertyValues = demo.numbers;
+      const generated = demo.createSequence(513);
+      const nested = demo.echoNestedNumbers([[1, 2], [3], []]);
+      const strings = demo.echoStrings(['alpha', 'beta', 'gamma']);
+      const empty = demo.echoNumbers([]);
+
+      return [
+        echoed.length,
+        echoed[0],
+        echoed[256],
+        echoed[512],
+        propertyValues[128],
+        demo.sumNumbers(numbers),
+        generated[0],
+        generated[256],
+        generated[512],
+        nested.length,
+        nested[0].join(','),
+        nested[1].join(','),
+        nested[2].length,
+        strings.join(','),
+        empty.length
+      ].join('|');
+    })()");
+
+    Assert.Equal("513|-256|0|256|-128|0|1|513|1025|3|1,2|3|0|alpha,beta,gamma|0", env.Context.ToManagedString(result));
   }
 
   [Fact]
@@ -644,6 +735,7 @@ public sealed class JSExportRegressionTests
     env.Context.ExportType<StableIdentityPropertyDemo>();
     env.Context.ExportType<StableIdentityMethodDemo>();
     env.Context.ExportType<ReferenceSemanticsDemo>();
+    env.Context.ExportType<ArrayMarshallingDemo>();
     env.Context.ExportType<DelegatePropertyDemo>();
     env.Context.ExportType<DelegateMethodDemo>();
     env.Context.ExportType<ThrowingReferenceSetterDemo>();
