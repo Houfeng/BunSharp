@@ -1800,7 +1800,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        return registration;");
         builder.AppendLine("    }");
         builder.AppendLine();
-        builder.AppendLine("    private static bool TryGetCachedRegistration(nint contextHandle, out RegistrationState registration)");
+        builder.AppendLine("    private static bool TryGetCachedRegistration(nint contextHandle, [global::System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out RegistrationState? registration)");
         builder.AppendLine("    {");
         builder.AppendLine("        if (t_cachedContextHandle == contextHandle && t_cachedRegistration is not null)");
         builder.AppendLine("        {");

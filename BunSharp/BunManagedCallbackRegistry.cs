@@ -187,6 +187,11 @@ internal static unsafe class BunManagedCallbackRegistry
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static BunValue HostFunctionThunk(nint context, int argc, BunValue* argv, nint userdata)
     {
+        if (userdata == 0)
+        {
+            return BunValue.Undefined;
+        }
+
         try
         {
             var state = GetState<HostCallbackState>(userdata);
@@ -202,6 +207,11 @@ internal static unsafe class BunManagedCallbackRegistry
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void EventCallbackThunk(nint userdata)
     {
+        if (userdata == 0)
+        {
+            return;
+        }
+
         try
         {
             var state = GetState<EventCallbackState>(userdata);
@@ -215,9 +225,13 @@ internal static unsafe class BunManagedCallbackRegistry
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void FinalizerThunk(nint userdata)
     {
+        if (userdata == 0)
+        {
+            return;
+        }
+
         try
         {
-            if (userdata == 0) return;
             var outerHandle = GCHandle.FromIntPtr(userdata);
             if (outerHandle.Target is not BunCallbackHandle callbackHandle) { outerHandle.Free(); return; }
             var state = GetState<FinalizerCallbackState>(callbackHandle.Pointer);
@@ -232,6 +246,11 @@ internal static unsafe class BunManagedCallbackRegistry
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static BunValue ClassMethodThunk(nint context, BunValue thisValue, nint nativePtr, int argc, BunValue* argv, nint userdata)
     {
+        if (userdata == 0)
+        {
+            return BunValue.Undefined;
+        }
+
         try
         {
             var state = GetState<ClassMethodCallbackState>(userdata);
@@ -247,6 +266,11 @@ internal static unsafe class BunManagedCallbackRegistry
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static BunValue ClassGetterThunk(nint context, BunValue thisValue, nint nativePtr, nint userdata)
     {
+        if (userdata == 0)
+        {
+            return BunValue.Undefined;
+        }
+
         try
         {
             var state = GetState<ClassPropertyCallbackState>(userdata);
@@ -263,6 +287,11 @@ internal static unsafe class BunManagedCallbackRegistry
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void ClassSetterThunk(nint context, BunValue thisValue, nint nativePtr, BunValue value, nint userdata)
     {
+        if (userdata == 0)
+        {
+            return;
+        }
+
         try
         {
             var state = GetState<ClassPropertyCallbackState>(userdata);
@@ -276,6 +305,11 @@ internal static unsafe class BunManagedCallbackRegistry
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static BunValue ClassConstructorThunk(nint context, nint klass, int argc, BunValue* argv, nint userdata)
     {
+        if (userdata == 0)
+        {
+            return BunValue.Undefined;
+        }
+
         try
         {
             var state = GetState<ClassConstructorCallbackState>(userdata);
@@ -291,6 +325,11 @@ internal static unsafe class BunManagedCallbackRegistry
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static BunValue ClassStaticMethodThunk(nint context, BunValue thisValue, nint userdata, int argc, BunValue* argv)
     {
+        if (userdata == 0)
+        {
+            return BunValue.Undefined;
+        }
+
         try
         {
             var state = GetState<ClassStaticMethodCallbackState>(userdata);
@@ -306,6 +345,11 @@ internal static unsafe class BunManagedCallbackRegistry
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static BunValue ClassStaticGetterThunk(nint context, BunValue thisValue, nint userdata)
     {
+        if (userdata == 0)
+        {
+            return BunValue.Undefined;
+        }
+
         try
         {
             var state = GetState<ClassStaticPropertyCallbackState>(userdata);
@@ -322,6 +366,11 @@ internal static unsafe class BunManagedCallbackRegistry
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void ClassStaticSetterThunk(nint context, BunValue thisValue, BunValue value, nint userdata)
     {
+        if (userdata == 0)
+        {
+            return;
+        }
+
         try
         {
             var state = GetState<ClassStaticPropertyCallbackState>(userdata);
@@ -335,9 +384,13 @@ internal static unsafe class BunManagedCallbackRegistry
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void ClassFinalizerThunk(nint nativePtr, nint userdata)
     {
+        if (userdata == 0)
+        {
+            return;
+        }
+
         try
         {
-            if (userdata == 0) return;
             var outerHandle = GCHandle.FromIntPtr(userdata);
             if (outerHandle.Target is not BunCallbackHandle callbackHandle) { outerHandle.Free(); return; }
             var state = GetState<ClassFinalizerCallbackState>(callbackHandle.Pointer);
@@ -352,9 +405,13 @@ internal static unsafe class BunManagedCallbackRegistry
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void PersistentClassFinalizerThunk(nint nativePtr, nint userdata)
     {
+        if (userdata == 0)
+        {
+            return;
+        }
+
         try
         {
-            if (userdata == 0) return;
             var state = GetState<ClassFinalizerCallbackState>(userdata);
             try { state.Callback(nativePtr, state.UserData); } catch { }
         }
@@ -366,6 +423,11 @@ internal static unsafe class BunManagedCallbackRegistry
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static BunValue GetterThunk(nint context, BunValue thisValue, nint userdata)
     {
+        if (userdata == 0)
+        {
+            return BunValue.Undefined;
+        }
+
         try
         {
             var state = GetState<GetterSetterCallbackState>(userdata);
@@ -380,6 +442,11 @@ internal static unsafe class BunManagedCallbackRegistry
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void SetterThunk(nint context, BunValue thisValue, BunValue value, nint userdata)
     {
+        if (userdata == 0)
+        {
+            return;
+        }
+
         try
         {
             var state = GetState<GetterSetterCallbackState>(userdata);
@@ -393,19 +460,21 @@ internal static unsafe class BunManagedCallbackRegistry
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void CallbackHandleDisposerThunk(nint userdata)
     {
+        if (userdata == 0)
+        {
+            return;
+        }
+
         try
         {
-            if (userdata != 0)
+            var outerHandle = GCHandle.FromIntPtr(userdata);
+            if (outerHandle.Target is BunCallbackHandle callbackHandle)
             {
-                var outerHandle = GCHandle.FromIntPtr(userdata);
-                if (outerHandle.Target is BunCallbackHandle callbackHandle)
-                {
-                    callbackHandle.Dispose();
-                }
-                else
-                {
-                    outerHandle.Free();
-                }
+                callbackHandle.Dispose();
+            }
+            else
+            {
+                outerHandle.Free();
             }
         }
         catch
