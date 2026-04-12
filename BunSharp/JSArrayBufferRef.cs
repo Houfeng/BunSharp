@@ -3,6 +3,14 @@ using BunSharp.Interop;
 
 namespace BunSharp;
 
+/// <summary>
+/// Retains a live JavaScript ArrayBuffer reference and exposes its shared byte
+/// backing store directly.
+/// Use this when the API needs the raw buffer object itself rather than a typed
+/// view over that buffer. For typed binary views such as Uint8Array, prefer
+/// <see cref="JSBufferRef"/> or <see cref="JSTypedArrayRef"/> depending on
+/// whether the element kind should be constrained to bytes.
+/// </summary>
 public sealed class JSArrayBufferRef : IDisposable
 {
     private readonly JSObjectRef _objectRef;

@@ -3,6 +3,13 @@ using BunSharp.Interop;
 
 namespace BunSharp;
 
+/// <summary>
+/// Retains a live JavaScript TypedArray reference and exposes its native layout.
+/// Use this when the API may receive different TypedArray kinds and the managed
+/// side needs to inspect <see cref="Kind"/>, element count, or byte layout.
+/// For byte-oriented APIs that should accept only Uint8Array or Buffer-like
+/// values, prefer <see cref="JSBufferRef"/>.
+/// </summary>
 public sealed class JSTypedArrayRef : IDisposable
 {
     private readonly JSObjectRef _objectRef;

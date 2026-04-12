@@ -2,6 +2,13 @@ using BunSharp.Interop;
 
 namespace BunSharp;
 
+/// <summary>
+/// Retains a live byte-oriented JavaScript view and restricts it to
+/// Uint8Array-compatible values, including Buffer-like subclasses.
+/// Use this for binary payloads where callers should not need to reason about
+/// arbitrary TypedArray kinds. For non-byte TypedArrays or when the element kind
+/// matters, prefer <see cref="JSTypedArrayRef"/>.
+/// </summary>
 public sealed class JSBufferRef : IDisposable
 {
     private readonly JSTypedArrayRef _typedArrayRef;
