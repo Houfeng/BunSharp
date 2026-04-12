@@ -13,16 +13,20 @@ namespace BunSharp;
 public sealed class JSTypedArrayRef : IDisposable
 {
     private readonly JSObjectRef _objectRef;
+    private readonly nuint _byteOffset;
+    private readonly BunTypedArrayKind _kind;
 
     public JSTypedArrayRef(BunContext context, BunValue value)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        if (!context.TryGetTypedArray(value, out _))
+        if (!context.TryGetTypedArray(value, out var info))
         {
             throw new ArgumentException("Shared typed array references require a TypedArray value.", nameof(value));
         }
 
+        _byteOffset = info.ByteOffset;
+        _kind = info.Kind;
         _objectRef = new JSObjectRef(context, value);
     }
 
@@ -32,13 +36,13 @@ public sealed class JSTypedArrayRef : IDisposable
 
     public nint Data => GetInfo().Data;
 
-    public nuint ByteOffset => GetInfo().ByteOffset;
+    public nuint ByteOffset => _byteOffset;
 
     public nuint ByteLength => GetInfo().ByteLength;
 
     public nuint ElementCount => GetInfo().ElementCount;
 
-    public BunTypedArrayKind Kind => GetInfo().Kind;
+    public BunTypedArrayKind Kind => _kind;
 
     public BunTypedArrayInfo GetInfo()
     {

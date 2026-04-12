@@ -631,6 +631,41 @@ public sealed class JSExportRegressionTests
   }
 
   [Fact]
+  public void DelegateProperties_ReplacingStableJsCallbacks_DoesNotAccumulateOwnedReferences()
+  {
+    using var env = CreateEnvironment();
+
+    var initialCount = GetCleanupCount(env.Runtime, "_preDestroyCleanupCallbacks");
+
+    var result = env.Context.Evaluate(@"(() => {
+      const demo = new DelegatePropertyDemo();
+      const callbackA = (message) => `left:${message}`;
+      const callbackB = (message) => `right:${message}`;
+
+      demo.stableCallback = callbackA;
+      const firstMatches = demo.stableCallback === callbackA;
+
+      demo.stableCallback = callbackB;
+      const secondMatches = demo.stableCallback === callbackB;
+      const invokeAfterReplace = demo.invokeStableCallback('ok');
+
+      demo.stableCallback = null;
+      const cleared = demo.invokeStableCallback('missing');
+
+      return [
+        firstMatches,
+        secondMatches,
+        invokeAfterReplace,
+        cleared,
+        demo.stableCallback === null
+      ].join('|');
+    })()");
+
+    Assert.Equal("true|true|right:ok|missing|true", env.Context.ToManagedString(result));
+    Assert.Equal(initialCount, GetCleanupCount(env.Runtime, "_preDestroyCleanupCallbacks"));
+  }
+
+  [Fact]
   public void DelegateMethodReturns_DefaultToStableAndReuseJsFunctionsPerManagedDelegate()
   {
     using var env = CreateEnvironment();
