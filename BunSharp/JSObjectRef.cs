@@ -2,10 +2,11 @@ namespace BunSharp;
 
 public sealed class JSObjectRef : IDisposable
 {
+    private readonly object _disposeSync = new();
     private BunContext? _context;
     private IDisposable? _cleanupRegistration;
     private BunValue _value;
-    private int _disposed;
+    private bool _disposed;
 
     public JSObjectRef(BunContext context, BunValue value)
     {
@@ -81,19 +82,28 @@ public sealed class JSObjectRef : IDisposable
 
     private void ReleaseProtectedValue()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        lock (_disposeSync)
         {
-            return;
-        }
+            if (_disposed)
+            {
+                return;
+            }
 
-        var context = Interlocked.Exchange(ref _context, null);
-        Interlocked.Exchange(ref _cleanupRegistration, null)?.Dispose();
-        var value = _value;
-        _value = BunValue.Undefined;
+            var context = _context;
+            if (context is null)
+            {
+                _disposed = true;
+                return;
+            }
 
-        if (context is not null)
-        {
+            var value = _value;
             context.Unprotect(value);
+
+            _cleanupRegistration?.Dispose();
+            _cleanupRegistration = null;
+            _value = BunValue.Undefined;
+            _context = null;
+            _disposed = true;
         }
     }
 }

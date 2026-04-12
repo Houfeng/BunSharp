@@ -184,7 +184,11 @@ public sealed class BunRuntime : IDisposable
             return;
         }
 
-        RunCleanupCallbacks(_preDestroyCleanupCallbacks);
+        VerifyThread();
+
+        List<Exception>? cleanupExceptions = null;
+
+        RunCleanupCallbacks(_preDestroyCleanupCallbacks, "pre-destroy", ref cleanupExceptions);
 
         if (Handle != 0)
         {
@@ -198,7 +202,7 @@ public sealed class BunRuntime : IDisposable
             Interlocked.Exchange(ref _eventCallbackHandle, null)?.Dispose();
         }
 
-        RunCleanupCallbacks(_cleanupCallbacks);
+        RunCleanupCallbacks(_cleanupCallbacks, "post-destroy", ref cleanupExceptions);
 
         if (_objectFinalizerRegistrations.Count > 0)
         {
@@ -219,7 +223,13 @@ public sealed class BunRuntime : IDisposable
         {
             BunManagedCallbackRegistry.removeContextCache(_context.Handle);
         }
+
         _disposed = true;
+
+        if (cleanupExceptions is not null)
+        {
+            throw new AggregateException("One or more BunRuntime cleanup callbacks failed.", cleanupExceptions);
+        }
     }
 
     internal void Retain(IDisposable resource)
@@ -318,7 +328,10 @@ public sealed class BunRuntime : IDisposable
         registration.Detach();
     }
 
-    private static void RunCleanupCallbacks(LinkedList<CleanupRegistration> callbacks)
+    private static void RunCleanupCallbacks(
+        LinkedList<CleanupRegistration> callbacks,
+        string phase,
+        ref List<Exception>? exceptions)
     {
         var node = callbacks.First;
         while (node is not null)
@@ -331,8 +344,10 @@ public sealed class BunRuntime : IDisposable
             {
                 callback?.Invoke();
             }
-            catch
+            catch (Exception ex)
             {
+                exceptions ??= [];
+                exceptions.Add(new InvalidOperationException($"BunRuntime {phase} cleanup callback failed.", ex));
             }
 
             node = next;
