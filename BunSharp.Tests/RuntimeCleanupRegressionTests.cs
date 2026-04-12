@@ -60,6 +60,22 @@ public sealed class RuntimeCleanupRegressionTests
   }
 
   [Fact]
+  public void JsObjectRef_PreDestroyCleanup_DoesNotKeepWrapperInstanceAlive()
+  {
+    using var runtime = BunRuntime.Create();
+    var context = runtime.Context;
+    var initialCount = GetCleanupCount(runtime, "_preDestroyCleanupCallbacks");
+    var weak = CreateAbandonedObjectRef(context);
+
+    Assert.Equal(initialCount + 1, GetCleanupCount(runtime, "_preDestroyCleanupCallbacks"));
+
+    ForceFullCollection();
+
+    Assert.False(weak.TryGetTarget(out _));
+    Assert.Equal(initialCount + 1, GetCleanupCount(runtime, "_preDestroyCleanupCallbacks"));
+  }
+
+  [Fact]
   public void BunRuntime_Dispose_OnWrongThread_Throws_And_RuntimeRemainsUsable()
   {
     var runtime = BunRuntime.Create();
@@ -113,5 +129,18 @@ public sealed class RuntimeCleanupRegressionTests
     var countProperty = value!.GetType().GetProperty("Count", BindingFlags.Instance | BindingFlags.Public);
     Assert.NotNull(countProperty);
     return (int)countProperty!.GetValue(value)!;
+  }
+
+  private static WeakReference<JSObjectRef> CreateAbandonedObjectRef(BunContext context)
+  {
+    var objectRef = new JSObjectRef(context, context.CreateObject());
+    return new WeakReference<JSObjectRef>(objectRef);
+  }
+
+  private static void ForceFullCollection()
+  {
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+    GC.Collect();
   }
 }

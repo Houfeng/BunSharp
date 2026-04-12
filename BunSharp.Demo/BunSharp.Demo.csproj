@@ -13,6 +13,8 @@
   <ItemGroup>
     <ProjectReference Include="..\BunSharp\BunSharp.csproj" />
     <ProjectReference Include="..\BunSharp.Generator\BunSharp.Generator.csproj"
+                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\BunSharp.Generator\BunSharp.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>

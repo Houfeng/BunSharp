@@ -1288,6 +1288,36 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        return new global::BunSharp.JSBufferRef(context, value);");
         builder.AppendLine("    }");
         builder.AppendLine();
+        builder.AppendLine("    public static global::BunSharp.BunValue ReferenceValueOrNull(global::BunSharp.JSObjectRef? value)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        return value is null ? global::BunSharp.BunValue.Null : value.Value;");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    public static global::BunSharp.BunValue ReferenceValueOrNull(global::BunSharp.JSFunctionRef? value)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        return value is null ? global::BunSharp.BunValue.Null : value.Value;");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    public static global::BunSharp.BunValue ReferenceValueOrNull(global::BunSharp.JSArrayRef? value)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        return value is null ? global::BunSharp.BunValue.Null : value.Value;");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    public static global::BunSharp.BunValue ReferenceValueOrNull(global::BunSharp.JSArrayBufferRef? value)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        return value is null ? global::BunSharp.BunValue.Null : value.Value;");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    public static global::BunSharp.BunValue ReferenceValueOrNull(global::BunSharp.JSTypedArrayRef? value)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        return value is null ? global::BunSharp.BunValue.Null : value.Value;");
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        builder.AppendLine("    public static global::BunSharp.BunValue ReferenceValueOrNull(global::BunSharp.JSBufferRef? value)");
+        builder.AppendLine("    {");
+        builder.AppendLine("        return value is null ? global::BunSharp.BunValue.Null : value.Value;");
+        builder.AppendLine("    }");
+        builder.AppendLine();
         builder.AppendLine("    private static void ReleaseUnmanagedBuffer(nint userdata)");
         builder.AppendLine("    {");
         builder.AppendLine("        if (userdata != 0)");
@@ -1677,7 +1707,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("                members = new Dictionary<int, StableIdentityEntry>();");
         builder.AppendLine("                _stableIdentityEntries[handle] = members;");
         builder.AppendLine("            }");
-        builder.AppendLine("            var hadExisting = members.TryGetValue(memberSlot, out var existing);");
+        builder.AppendLine("            var hadExisting = members.TryGetValue(memberSlot, out var existingEntry);");
         builder.AppendLine("            try");
         builder.AppendLine("            {");
         builder.AppendLine("                global::BunSharp.Interop.BunNative.Protect(ContextHandle, value);");
@@ -1699,6 +1729,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("            }");
         builder.AppendLine("            if (hadExisting)");
         builder.AppendLine("            {");
+        builder.AppendLine("                var existing = existingEntry!;");
         builder.AppendLine("                global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, existing.Value);");
         builder.AppendLine("                existing.OwnedReference?.Dispose();");
         builder.AppendLine("            }");
@@ -1716,10 +1747,23 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("                return;");
         builder.AppendLine("            }");
         builder.AppendLine();
+        builder.AppendLine("            global::System.Collections.Generic.List<global::System.Exception>? errors = null;");
         builder.AppendLine("            foreach (var entry in members.Values)");
         builder.AppendLine("            {");
-        builder.AppendLine("                global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
-        builder.AppendLine("                entry.OwnedReference?.Dispose();");
+        builder.AppendLine("                try");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
+        builder.AppendLine("                    entry.OwnedReference?.Dispose();");
+        builder.AppendLine("                }");
+        builder.AppendLine("                catch (global::System.Exception ex)");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    errors ??= new();");
+        builder.AppendLine("                    errors.Add(ex);");
+        builder.AppendLine("                }");
+        builder.AppendLine("            }");
+        builder.AppendLine("            if (errors is not null)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                throw new global::System.AggregateException(errors);");
         builder.AppendLine("            }");
         builder.AppendLine("        }");
         builder.AppendLine();
@@ -1740,22 +1784,43 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine();
         builder.AppendLine("        public void ReleaseTrackedHandles()");
         builder.AppendLine("        {");
+        builder.AppendLine("            global::System.Collections.Generic.List<global::System.Exception>? errors = null;");
         builder.AppendLine("            foreach (var members in _stableIdentityEntries.Values)");
         builder.AppendLine("            {");
         builder.AppendLine("                foreach (var entry in members.Values)");
         builder.AppendLine("                {");
-        builder.AppendLine("                    global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
-        builder.AppendLine("                    entry.OwnedReference?.Dispose();");
+        builder.AppendLine("                    try");
+        builder.AppendLine("                    {");
+        builder.AppendLine("                        global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
+        builder.AppendLine("                        entry.OwnedReference?.Dispose();");
+        builder.AppendLine("                    }");
+        builder.AppendLine("                    catch (global::System.Exception ex)");
+        builder.AppendLine("                    {");
+        builder.AppendLine("                        errors ??= new();");
+        builder.AppendLine("                        errors.Add(ex);");
+        builder.AppendLine("                    }");
         builder.AppendLine("                }");
         builder.AppendLine("            }");
         builder.AppendLine("            foreach (var h in _trackedHandles)");
         builder.AppendLine("            {");
-        builder.AppendLine("                GCHandle.FromIntPtr(h).Free();");
+        builder.AppendLine("                try");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    GCHandle.FromIntPtr(h).Free();");
+        builder.AppendLine("                }");
+        builder.AppendLine("                catch (global::System.Exception ex)");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    errors ??= new();");
+        builder.AppendLine("                    errors.Add(ex);");
+        builder.AppendLine("                }");
         builder.AppendLine("            }");
         builder.AppendLine("            _trackedHandles.Clear();");
         builder.AppendLine("            _stableIdentityEntries.Clear();");
         builder.AppendLine("            _wrappersByHandle.Clear();");
         builder.AppendLine("            _wrappersByInstance.Clear();");
+        builder.AppendLine("            if (errors is not null)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                throw new global::System.AggregateException(errors);");
+        builder.AppendLine("            }");
         builder.AppendLine("        }");
         builder.AppendLine();
         builder.AppendLine("        public void DisposeReleaseHandleFinalizer()");
@@ -1770,11 +1835,32 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("                return;");
         builder.AppendLine("            }");
         builder.AppendLine();
-        builder.AppendLine("            global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
-        builder.AppendLine("            entry.OwnedReference?.Dispose();");
+        builder.AppendLine("            global::System.Collections.Generic.List<global::System.Exception>? errors = null;");
+        builder.AppendLine("            try");
+        builder.AppendLine("            {");
+        builder.AppendLine("                global::BunSharp.Interop.BunNative.Unprotect(ContextHandle, entry.Value);");
+        builder.AppendLine("            }");
+        builder.AppendLine("            catch (global::System.Exception ex)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                errors ??= new();");
+        builder.AppendLine("                errors.Add(ex);");
+        builder.AppendLine("            }");
+        builder.AppendLine("            try");
+        builder.AppendLine("            {");
+        builder.AppendLine("                entry.OwnedReference?.Dispose();");
+        builder.AppendLine("            }");
+        builder.AppendLine("            catch (global::System.Exception ex)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                errors ??= new();");
+        builder.AppendLine("                errors.Add(ex);");
+        builder.AppendLine("            }");
         builder.AppendLine("            if (members.Count == 0)");
         builder.AppendLine("            {");
         builder.AppendLine("                _stableIdentityEntries.Remove(handle);");
+        builder.AppendLine("            }");
+        builder.AppendLine("            if (errors is not null)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                throw new global::System.AggregateException(errors);");
         builder.AppendLine("            }");
         builder.AppendLine("        }");
         builder.AppendLine("    }");
@@ -1910,9 +1996,38 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("                {");
         builder.AppendLine("                    if (Registrations.Remove(contextHandle, out var removed))");
         builder.AppendLine("                    {");
-        builder.AppendLine("                        ReleaseStaticReferences();");
-        builder.AppendLine("                        removed.ReleaseTrackedHandles();");
-        builder.AppendLine("                        removed.DisposeReleaseHandleFinalizer();");
+        builder.AppendLine("                        global::System.Collections.Generic.List<global::System.Exception>? errors = null;");
+        builder.AppendLine("                        try");
+        builder.AppendLine("                        {");
+        builder.AppendLine("                            ReleaseStaticReferences();");
+        builder.AppendLine("                        }");
+        builder.AppendLine("                        catch (global::System.Exception ex)");
+        builder.AppendLine("                        {");
+        builder.AppendLine("                            errors ??= new();");
+        builder.AppendLine("                            errors.Add(ex);");
+        builder.AppendLine("                        }");
+        builder.AppendLine("                        try");
+        builder.AppendLine("                        {");
+        builder.AppendLine("                            removed.ReleaseTrackedHandles();");
+        builder.AppendLine("                        }");
+        builder.AppendLine("                        catch (global::System.Exception ex)");
+        builder.AppendLine("                        {");
+        builder.AppendLine("                            errors ??= new();");
+        builder.AppendLine("                            errors.Add(ex);");
+        builder.AppendLine("                        }");
+        builder.AppendLine("                        try");
+        builder.AppendLine("                        {");
+        builder.AppendLine("                            removed.DisposeReleaseHandleFinalizer();");
+        builder.AppendLine("                        }");
+        builder.AppendLine("                        catch (global::System.Exception ex)");
+        builder.AppendLine("                        {");
+        builder.AppendLine("                            errors ??= new();");
+        builder.AppendLine("                            errors.Add(ex);");
+        builder.AppendLine("                        }");
+        builder.AppendLine("                        if (errors is not null)");
+        builder.AppendLine("                        {");
+        builder.AppendLine("                            throw new global::System.AggregateException(errors);");
+        builder.AppendLine("                        }");
         builder.AppendLine("                    }");
         builder.AppendLine("                }");
         builder.AppendLine();
@@ -2029,12 +2144,39 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        if (nativePtr == 0) return;");
         builder.AppendLine("        if (TryGetCachedRegistration(userdata, out var cached) && cached.UntrackHandle(nativePtr))");
         builder.AppendLine("        {");
-        builder.AppendLine("            cached.ReleaseStableIdentityValuesForHandle(nativePtr);");
         builder.AppendLine("            var cachedHandle = GCHandle.FromIntPtr(nativePtr);");
-        builder.Append("            ReleaseInstanceReferences((");
+        builder.AppendLine("            try");
+        builder.AppendLine("            {");
+        builder.AppendLine("                global::System.Collections.Generic.List<global::System.Exception>? errors = null;");
+        builder.AppendLine("                try");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    cached.ReleaseStableIdentityValuesForHandle(nativePtr);");
+        builder.AppendLine("                }");
+        builder.AppendLine("                catch (global::System.Exception ex)");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    errors ??= new();");
+        builder.AppendLine("                    errors.Add(ex);");
+        builder.AppendLine("                }");
+        builder.AppendLine("                try");
+        builder.AppendLine("                {");
+        builder.Append("                    ReleaseInstanceReferences((");
         builder.Append(model.FullyQualifiedTypeName);
         builder.AppendLine("?)cachedHandle.Target);");
-        builder.AppendLine("            cachedHandle.Free();");
+        builder.AppendLine("                }");
+        builder.AppendLine("                catch (global::System.Exception ex)");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    errors ??= new();");
+        builder.AppendLine("                    errors.Add(ex);");
+        builder.AppendLine("                }");
+        builder.AppendLine("                if (errors is not null)");
+        builder.AppendLine("                {");
+        builder.AppendLine("                    throw new global::System.AggregateException(errors);");
+        builder.AppendLine("                }");
+        builder.AppendLine("            }");
+        builder.AppendLine("            finally");
+        builder.AppendLine("            {");
+        builder.AppendLine("                cachedHandle.Free();");
+        builder.AppendLine("            }");
         builder.AppendLine("            return;");
         builder.AppendLine("        }");
         builder.AppendLine();
@@ -2049,12 +2191,39 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("            CacheRegistration(userdata, existing);");
         builder.AppendLine("            reg = existing;");
         builder.AppendLine("        }");
-        builder.AppendLine("        reg.ReleaseStableIdentityValuesForHandle(nativePtr);");
         builder.AppendLine("        var handle = GCHandle.FromIntPtr(nativePtr);");
-        builder.Append("        ReleaseInstanceReferences((");
+        builder.AppendLine("        try");
+        builder.AppendLine("        {");
+        builder.AppendLine("            global::System.Collections.Generic.List<global::System.Exception>? errors = null;");
+        builder.AppendLine("            try");
+        builder.AppendLine("            {");
+        builder.AppendLine("                reg.ReleaseStableIdentityValuesForHandle(nativePtr);");
+        builder.AppendLine("            }");
+        builder.AppendLine("            catch (global::System.Exception ex)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                errors ??= new();");
+        builder.AppendLine("                errors.Add(ex);");
+        builder.AppendLine("            }");
+        builder.AppendLine("            try");
+        builder.AppendLine("            {");
+        builder.Append("                ReleaseInstanceReferences((");
         builder.Append(model.FullyQualifiedTypeName);
         builder.AppendLine("?)handle.Target);");
-        builder.AppendLine("        handle.Free();");
+        builder.AppendLine("            }");
+        builder.AppendLine("            catch (global::System.Exception ex)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                errors ??= new();");
+        builder.AppendLine("                errors.Add(ex);");
+        builder.AppendLine("            }");
+        builder.AppendLine("            if (errors is not null)");
+        builder.AppendLine("            {");
+        builder.AppendLine("                throw new global::System.AggregateException(errors);");
+        builder.AppendLine("            }");
+        builder.AppendLine("        }");
+        builder.AppendLine("        finally");
+        builder.AppendLine("        {");
+        builder.AppendLine("            handle.Free();");
+        builder.AppendLine("        }");
         builder.AppendLine("    }");
         builder.AppendLine();
 
@@ -2096,6 +2265,9 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
     private static void AppendReleaseReferenceMethods(StringBuilder builder, ExportedTypeModel model)
     {
+        var instanceDisposableProperties = model.InstanceProperties.Where(static property => property.PropertyType.ShouldDisposePreviousValueOnReplacement).ToList();
+        var staticDisposableProperties = model.StaticProperties.Where(static property => property.PropertyType.ShouldDisposePreviousValueOnReplacement).ToList();
+
         builder.Append("    private static void ReleaseInstanceReferences(");
         builder.Append(model.FullyQualifiedTypeName);
         builder.AppendLine("? target)");
@@ -2105,22 +2277,40 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("            return;");
         builder.AppendLine("        }");
 
-        foreach (var property in model.InstanceProperties.Where(static property => property.PropertyType.ShouldDisposePreviousValueOnReplacement))
+        if (instanceDisposableProperties.Count > 0)
         {
-            builder.Append("        if (target.");
-            builder.Append(property.MemberName);
-            builder.AppendLine(" is not null)");
-            builder.AppendLine("        {");
-            builder.Append("            var value = target.");
-            builder.Append(property.MemberName);
-            builder.AppendLine(";");
-            if (property.HasSetter)
+            builder.AppendLine("        global::System.Collections.Generic.List<global::System.Exception>? errors = null;");
+
+            foreach (var property in instanceDisposableProperties)
             {
-                builder.Append("            target.");
+                builder.AppendLine("        try");
+                builder.AppendLine("        {");
+                builder.Append("            if (target.");
                 builder.Append(property.MemberName);
-                builder.AppendLine(" = default!;");
+                builder.AppendLine(" is not null)");
+                builder.AppendLine("            {");
+                builder.Append("                var value = target.");
+                builder.Append(property.MemberName);
+                builder.AppendLine(";");
+                if (property.HasSetter)
+                {
+                    builder.Append("                target.");
+                    builder.Append(property.MemberName);
+                    builder.AppendLine(" = default!;");
+                }
+                builder.AppendLine("                value.Dispose();");
+                builder.AppendLine("            }");
+                builder.AppendLine("        }");
+                builder.AppendLine("        catch (global::System.Exception ex)");
+                builder.AppendLine("        {");
+                builder.AppendLine("            errors ??= new();");
+                builder.AppendLine("            errors.Add(ex);");
+                builder.AppendLine("        }");
             }
-            builder.AppendLine("            value.Dispose();");
+
+            builder.AppendLine("        if (errors is not null)");
+            builder.AppendLine("        {");
+            builder.AppendLine("            throw new global::System.AggregateException(errors);");
             builder.AppendLine("        }");
         }
 
@@ -2129,28 +2319,46 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("    private static void ReleaseStaticReferences()");
         builder.AppendLine("    {");
 
-        foreach (var property in model.StaticProperties.Where(static property => property.PropertyType.ShouldDisposePreviousValueOnReplacement))
+        if (staticDisposableProperties.Count > 0)
         {
-            builder.Append("        if (");
-            builder.Append(model.FullyQualifiedTypeName);
-            builder.Append('.');
-            builder.Append(property.MemberName);
-            builder.AppendLine(" is not null)");
-            builder.AppendLine("        {");
-            builder.Append("            var value = ");
-            builder.Append(model.FullyQualifiedTypeName);
-            builder.Append('.');
-            builder.Append(property.MemberName);
-            builder.AppendLine(";");
-            if (property.HasSetter)
+            builder.AppendLine("        global::System.Collections.Generic.List<global::System.Exception>? errors = null;");
+
+            foreach (var property in staticDisposableProperties)
             {
-                builder.Append("            ");
+                builder.AppendLine("        try");
+                builder.AppendLine("        {");
+                builder.Append("            if (");
                 builder.Append(model.FullyQualifiedTypeName);
                 builder.Append('.');
                 builder.Append(property.MemberName);
-                builder.AppendLine(" = default!;");
+                builder.AppendLine(" is not null)");
+                builder.AppendLine("            {");
+                builder.Append("                var value = ");
+                builder.Append(model.FullyQualifiedTypeName);
+                builder.Append('.');
+                builder.Append(property.MemberName);
+                builder.AppendLine(";");
+                if (property.HasSetter)
+                {
+                    builder.Append("                ");
+                    builder.Append(model.FullyQualifiedTypeName);
+                    builder.Append('.');
+                    builder.Append(property.MemberName);
+                    builder.AppendLine(" = default!;");
+                }
+                builder.AppendLine("                value.Dispose();");
+                builder.AppendLine("            }");
+                builder.AppendLine("        }");
+                builder.AppendLine("        catch (global::System.Exception ex)");
+                builder.AppendLine("        {");
+                builder.AppendLine("            errors ??= new();");
+                builder.AppendLine("            errors.Add(ex);");
+                builder.AppendLine("        }");
             }
-            builder.AppendLine("            value.Dispose();");
+
+            builder.AppendLine("        if (errors is not null)");
+            builder.AppendLine("        {");
+            builder.AppendLine("            throw new global::System.AggregateException(errors);");
             builder.AppendLine("        }");
         }
 
@@ -2236,9 +2444,6 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.Append("        var value = ");
             builder.Append(method.ReturnType.IsDelegate ? $"{method.DelegateFunctionHelperName}(context, result)" : ConvertToBunValue(method.ReturnType, "result", "context"));
             builder.AppendLine(";");
-            builder.Append("        registration.ClearStableIdentityValue(nativePtr, ");
-            builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-            builder.AppendLine(");");
             builder.Append("        registration.CacheStableIdentityValue(nativePtr, ");
             builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine(", result, value);");
@@ -2288,9 +2493,6 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.Append("        var result = ");
                 builder.Append(property.DelegateFunctionHelperName);
                 builder.AppendLine("(context, source);");
-                builder.Append("        registration.ClearStableIdentityValue(nativePtr, ");
-                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-                builder.AppendLine(");");
                 builder.Append("        registration.CacheStableIdentityValue(nativePtr, ");
                 builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(", source, result);");
@@ -2318,9 +2520,6 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.Append("        var result = ");
                 builder.Append(ConvertToBunValue(property.PropertyType, "source", "context"));
                 builder.AppendLine(";");
-                builder.Append("        registration.ClearStableIdentityValue(nativePtr, ");
-                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-                builder.AppendLine(");");
                 builder.Append("        registration.CacheStableIdentityValue(nativePtr, ");
                 builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(", source, result);");
@@ -2463,9 +2662,6 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.Append("        var result = ");
                 builder.Append(property.DelegateFunctionHelperName);
                 builder.AppendLine("(context, source);");
-                builder.Append("        registration.ClearStableIdentityValue(0, ");
-                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-                builder.AppendLine(");");
                 builder.Append("        registration.CacheStableIdentityValue(0, ");
                 builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(", source, result);");
@@ -2495,9 +2691,6 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.Append("        var result = ");
                 builder.Append(ConvertToBunValue(property.PropertyType, "source", "context"));
                 builder.AppendLine(";");
-                builder.Append("        registration.ClearStableIdentityValue(0, ");
-                builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-                builder.AppendLine(");");
                 builder.Append("        registration.CacheStableIdentityValue(0, ");
                 builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine(", source, result);");
@@ -2651,9 +2844,6 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.Append("        var value = ");
             builder.Append(method.ReturnType.IsDelegate ? $"{method.DelegateFunctionHelperName}(context, result)" : ConvertToBunValue(method.ReturnType, "result", "context"));
             builder.AppendLine(";");
-            builder.Append("        registration.ClearStableIdentityValue(0, ");
-            builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-            builder.AppendLine(");");
             builder.Append("        registration.CacheStableIdentityValue(0, ");
             builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine(", result, value);");
@@ -2872,12 +3062,12 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             ExportValueKind.String => $"{valueExpression} is null ? global::BunSharp.BunValue.Null : {contextExpression}.CreateString({valueExpression})",
             ExportValueKind.ByteArray => $"__JSExportCommon.CreateByteArray({contextExpression}, {valueExpression})",
             ExportValueKind.BunValue => valueExpression,
-            ExportValueKind.JSObjectRef => $"{valueExpression} is null ? global::BunSharp.BunValue.Null : {valueExpression}.Value",
-            ExportValueKind.JSFunctionRef => $"{valueExpression} is null ? global::BunSharp.BunValue.Null : {valueExpression}.Value",
-            ExportValueKind.JSArrayRef => $"{valueExpression} is null ? global::BunSharp.BunValue.Null : {valueExpression}.Value",
-            ExportValueKind.JSArrayBufferRef => $"{valueExpression} is null ? global::BunSharp.BunValue.Null : {valueExpression}.Value",
-            ExportValueKind.JSTypedArrayRef => $"{valueExpression} is null ? global::BunSharp.BunValue.Null : {valueExpression}.Value",
-            ExportValueKind.JSBufferRef => $"{valueExpression} is null ? global::BunSharp.BunValue.Null : {valueExpression}.Value",
+            ExportValueKind.JSObjectRef => $"__JSExportCommon.ReferenceValueOrNull({valueExpression})",
+            ExportValueKind.JSFunctionRef => $"__JSExportCommon.ReferenceValueOrNull({valueExpression})",
+            ExportValueKind.JSArrayRef => $"__JSExportCommon.ReferenceValueOrNull({valueExpression})",
+            ExportValueKind.JSArrayBufferRef => $"__JSExportCommon.ReferenceValueOrNull({valueExpression})",
+            ExportValueKind.JSTypedArrayRef => $"__JSExportCommon.ReferenceValueOrNull({valueExpression})",
+            ExportValueKind.JSBufferRef => $"__JSExportCommon.ReferenceValueOrNull({valueExpression})",
             ExportValueKind.ExportedObject => $"{type.HelperId}.WrapManaged({contextExpression}, {valueExpression})",
             ExportValueKind.Array => $"__JSExportCommon.{GetArrayWriteHelperName(type)}({contextExpression}, {valueExpression})",
             _ => throw new InvalidOperationException($"Unsupported conversion kind {type.Kind}.")

@@ -2,11 +2,7 @@ namespace BunSharp;
 
 public sealed class JSObjectRef : IDisposable
 {
-    private readonly object _disposeSync = new();
-    private BunContext? _context;
-    private IDisposable? _cleanupRegistration;
-    private BunValue _value;
-    private bool _disposed;
+    private readonly ReleaseState _state;
 
     public JSObjectRef(BunContext context, BunValue value)
     {
@@ -27,44 +23,14 @@ public sealed class JSObjectRef : IDisposable
             throw new ArgumentException("Persistent JS references require a JS object or function value.", nameof(value));
         }
 
-        _context = context;
-        _value = value;
-
-        var protectedValue = false;
-        try
-        {
-            context.Protect(value);
-            protectedValue = true;
-            _cleanupRegistration = context.RegisterPreDestroyCleanup(ReleaseProtectedValue);
-        }
-        catch (Exception ex)
-        {
-            _cleanupRegistration = null;
-            _value = BunValue.Undefined;
-            _context = null;
-
-            if (protectedValue)
-            {
-                try
-                {
-                    context.Unprotect(value);
-                }
-                catch (Exception rollbackEx)
-                {
-                    throw new AggregateException("Failed to initialize JSObjectRef and rollback the protected JS reference.", ex, rollbackEx);
-                }
-            }
-
-            throw;
-        }
+        _state = new ReleaseState(context, value);
     }
 
     public BunContext Context
     {
         get
         {
-            ObjectDisposedException.ThrowIf(_context is null, this);
-            return _context;
+            return _state.Context;
         }
     }
 
@@ -72,8 +38,7 @@ public sealed class JSObjectRef : IDisposable
     {
         get
         {
-            ObjectDisposedException.ThrowIf(_context is null, this);
-            return _value;
+            return _state.Value;
         }
     }
 
@@ -101,34 +66,108 @@ public sealed class JSObjectRef : IDisposable
 
     public void Dispose()
     {
-        ReleaseProtectedValue();
+        _state.Dispose();
         GC.SuppressFinalize(this);
     }
 
-    private void ReleaseProtectedValue()
+    private sealed class ReleaseState : IDisposable
     {
-        lock (_disposeSync)
+        private readonly object _disposeSync = new();
+        private BunContext? _context;
+        private IDisposable? _cleanupRegistration;
+        private BunValue _value;
+        private bool _disposed;
+
+        public ReleaseState(BunContext context, BunValue value)
         {
-            if (_disposed)
-            {
-                return;
-            }
+            _context = context;
+            _value = value;
 
-            var context = _context;
-            if (context is null)
+            var protectedValue = false;
+            try
             {
+                context.Protect(value);
+                protectedValue = true;
+                _cleanupRegistration = context.RegisterPreDestroyCleanup(ReleaseProtectedValue);
+            }
+            catch (Exception ex)
+            {
+                _cleanupRegistration = null;
+                _value = BunValue.Undefined;
+                _context = null;
+
+                if (protectedValue)
+                {
+                    try
+                    {
+                        context.Unprotect(value);
+                    }
+                    catch (Exception rollbackEx)
+                    {
+                        throw new AggregateException("Failed to initialize JSObjectRef and rollback the protected JS reference.", ex, rollbackEx);
+                    }
+                }
+
+                throw;
+            }
+        }
+
+        public BunContext Context
+        {
+            get
+            {
+                var context = _context;
+                if (context is null)
+                {
+                    throw new ObjectDisposedException(nameof(JSObjectRef));
+                }
+
+                return context;
+            }
+        }
+
+        public BunValue Value
+        {
+            get
+            {
+                if (_context is null)
+                {
+                    throw new ObjectDisposedException(nameof(JSObjectRef));
+                }
+
+                return _value;
+            }
+        }
+
+        public void Dispose()
+        {
+            ReleaseProtectedValue();
+        }
+
+        private void ReleaseProtectedValue()
+        {
+            lock (_disposeSync)
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                var context = _context;
+                if (context is null)
+                {
+                    _disposed = true;
+                    return;
+                }
+
+                var value = _value;
+                context.Unprotect(value);
+                _cleanupRegistration?.Dispose();
+                _cleanupRegistration = null;
+                _value = BunValue.Undefined;
+                _context = null;
                 _disposed = true;
-                return;
             }
-
-            var value = _value;
-            context.Unprotect(value);
-
-            _cleanupRegistration?.Dispose();
-            _cleanupRegistration = null;
-            _value = BunValue.Undefined;
-            _context = null;
-            _disposed = true;
         }
     }
 }
