@@ -193,13 +193,19 @@ public sealed class BunRuntime : IDisposable
         if (Handle != 0)
         {
             BunNative.SetEventCallback(Handle, 0, 0);
-            Interlocked.Exchange(ref _eventCallbackHandle, null)?.Dispose();
+            DisposeCleanupResource(
+                Interlocked.Exchange(ref _eventCallbackHandle, null),
+                "event callback handle",
+                ref cleanupExceptions);
             BunNative.Destroy(Handle);
             Handle = 0;
         }
         else
         {
-            Interlocked.Exchange(ref _eventCallbackHandle, null)?.Dispose();
+            DisposeCleanupResource(
+                Interlocked.Exchange(ref _eventCallbackHandle, null),
+                "event callback handle",
+                ref cleanupExceptions);
         }
 
         RunCleanupCallbacks(_cleanupCallbacks, "post-destroy", ref cleanupExceptions);
@@ -209,7 +215,7 @@ public sealed class BunRuntime : IDisposable
             var registrations = _objectFinalizerRegistrations.Values.ToArray();
             _objectFinalizerRegistrations.Clear();
             for (var i = registrations.Length - 1; i >= 0; i--)
-                registrations[i].Dispose();
+                DisposeCleanupResource(registrations[i], "object finalizer registration", ref cleanupExceptions);
         }
 
         var snapshot = _ownedResources.Count > 0 ? _ownedResources.ToArray() : null;
@@ -217,7 +223,7 @@ public sealed class BunRuntime : IDisposable
         if (snapshot is not null)
         {
             for (var i = snapshot.Length - 1; i >= 0; i--)
-                snapshot[i].Dispose();
+                DisposeCleanupResource(snapshot[i], "owned resource", ref cleanupExceptions);
         }
         if (_context is not null)
         {
@@ -228,7 +234,7 @@ public sealed class BunRuntime : IDisposable
 
         if (cleanupExceptions is not null)
         {
-            throw new AggregateException("One or more BunRuntime cleanup callbacks failed.", cleanupExceptions);
+            throw new AggregateException("One or more BunRuntime cleanup operations failed.", cleanupExceptions);
         }
     }
 
@@ -351,6 +357,27 @@ public sealed class BunRuntime : IDisposable
             }
 
             node = next;
+        }
+    }
+
+    private static void DisposeCleanupResource(
+        IDisposable? resource,
+        string description,
+        ref List<Exception>? exceptions)
+    {
+        if (resource is null)
+        {
+            return;
+        }
+
+        try
+        {
+            resource.Dispose();
+        }
+        catch (Exception ex)
+        {
+            exceptions ??= [];
+            exceptions.Add(new InvalidOperationException($"BunRuntime {description} disposal failed.", ex));
         }
     }
 
@@ -530,6 +557,8 @@ internal sealed class BunObjectFinalizerRegistration : IDisposable
         _disposed = true;
         _owner.RemoveObjectFinalizerRegistration(_target, this);
 
+        List<Exception>? cleanupExceptions = null;
+
         if (runManagedFinalizers && _hasManagedFinalizer)
         {
             try
@@ -541,14 +570,33 @@ internal sealed class BunObjectFinalizerRegistration : IDisposable
             }
         }
 
-        foreach (var handle in _callbackHandles)
-            handle.Dispose();
-
+        var callbackHandles = _callbackHandles.Count > 0 ? _callbackHandles.ToArray() : null;
         _callbackHandles.Clear();
         _propertyCallbacks.Clear();
         _managedFinalizer = null;
         _managedFinalizerUserData = 0;
         _hasManagedFinalizer = false;
+
+        if (callbackHandles is not null)
+        {
+            for (var i = callbackHandles.Length - 1; i >= 0; i--)
+            {
+                try
+                {
+                    callbackHandles[i].Dispose();
+                }
+                catch (Exception ex)
+                {
+                    cleanupExceptions ??= [];
+                    cleanupExceptions.Add(new InvalidOperationException("BunObjectFinalizerRegistration callback handle disposal failed.", ex));
+                }
+            }
+        }
+
+        if (cleanupExceptions is not null)
+        {
+            throw new AggregateException("One or more BunObjectFinalizerRegistration cleanup operations failed.", cleanupExceptions);
+        }
     }
 
     private ref PropertyCallbackRegistration GetOrCreatePropertyRegistration(string key)
