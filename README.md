@@ -16,7 +16,7 @@ BunSharp is a .NET binding for the [libbun](https://github.com/Houfeng/libbun) e
 - Evaluate JavaScript and TypeScript from .NET
 - Register host functions on the JS global object
 - Export C# classes with `JSExportAttribute`
-- Support instance methods, instance properties, static members, and `byte[]` ↔ `Uint8Array`
+- Support instance methods, instance properties, selected static members, and `byte[]` ↔ `Uint8Array`
 - Support `T[]` arrays as parameters and return values — including nested arrays (`T[][]`) and arrays of exported classes
 - Support explicit persistent JS references via `JSObjectRef`, `JSFunctionRef`, `JSArrayRef`, `JSArrayBufferRef`, `JSTypedArrayRef`, and `JSBufferRef`
 - No runtime reflection — AOT friendly
@@ -127,10 +127,15 @@ Console.WriteLine(context.ToManagedString(value));
 ```
 
 - Apply `JSExport` to a class to export it
-- Exported classes automatically include all public instance and static methods and properties
+- Exported classes automatically include all public instance and static methods and properties that use supported export shapes
 - Class names stay unchanged by default
 - Method and property names are exported as camelCase by default
 - `JSExport(false)` on a member excludes that member from export
+
+Compile-time restrictions:
+
+- Static `JSObjectRef`, `JSFunctionRef`, `JSArrayRef`, `JSArrayBufferRef`, `JSTypedArrayRef`, and `JSBufferRef` properties and static method return values are rejected by the generator with `BSG010`
+- Static delegate properties and static delegate method return values are rejected by the generator with `BSG011`
 
 ## Arrays
 
@@ -185,7 +190,9 @@ console.log(DataService.tags);								// ["fast", "aot", "ts"]
 
 Ordinary `JSExport` classes do not need to expose these types. The default path is still to use plain C# types such as `string`, `byte[]`, `T[]`, and other `[JSExport]` classes.
 
-These reference types are an advanced opt-in surface. Use them only when the JS-facing API must explicitly preserve JS identity or shared backing storage. `JSExport` supports them in constructor parameters, method parameters, return values, and properties so you can choose reference or shared semantics explicitly instead of relying on `BunValue` as an untyped escape hatch.
+These reference types are an advanced opt-in surface. Use them only when the JS-facing API must explicitly preserve JS identity or shared backing storage. `JSExport` supports them in constructor parameters, method parameters, instance return values, and instance properties so you can choose reference or shared semantics explicitly instead of relying on `BunValue` as an untyped escape hatch.
+
+Static JS reference properties and static method return values that use these wrapper types are not supported. The generator reports `BSG010` for those member shapes.
 
 If a type is mainly part of your C# domain model and is also exported to JS, prefer keeping that model plain. When explicit JS reference semantics are needed, the better pattern is usually to add a thin JS-facing bridge or facade type that uses the reference wrappers only at the export boundary, instead of changing the core domain type to `JSObjectRef`, `JSFunctionRef`, `JSArrayRef`, or `JSArrayBufferRef` members.
 
@@ -223,7 +230,7 @@ If you need to preserve the original JS object identity or shared backing storag
 
 ## Delegate Properties
 
-Exported delegate properties and delegate method return values are supported and always use stable function-reference semantics.
+Exported instance delegate properties and instance delegate method return values are supported and always use stable function-reference semantics.
 
 ```csharp
 public delegate string MessageCallback(string message);
@@ -255,6 +262,7 @@ Rules:
 - Delegate method return values also default to stable behavior even without `Stable = true`
 - Explicit `Stable = true` is allowed
 - Explicit `Stable = false` is rejected by the generator
+- Static delegate properties and static delegate method return values are not supported; the generator reports `BSG011`
 
 When JS assigns a function to a delegate property, C# sees a typed delegate wrapper. When C# assigns a delegate to that property, JS reads back a callable function, and repeated reads return the same JS function object until the property changes.
 

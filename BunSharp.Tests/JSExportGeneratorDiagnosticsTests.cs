@@ -142,6 +142,143 @@ internal sealed class InternalExportedType
     Assert.DoesNotContain(diagnostics, d => d.Id == "BSG009");
   }
 
+  [Fact]
+  public void StaticJsReferenceProperty_ReportsCompileTimeDiagnostic()
+  {
+    var diagnostics = RunGenerator(@"
+using BunSharp;
+
+[JSExport]
+public sealed class StaticJsReferencePropertyDemo
+{
+  public StaticJsReferencePropertyDemo() { }
+
+  public static JSObjectRef? SharedObject { get; set; }
+}");
+
+    var diagnostic = Assert.Single(diagnostics, d => d.Id == "BSG010");
+    Assert.Contains("SharedObject", diagnostic.GetMessage());
+    Assert.Contains("JSObjectRef", diagnostic.GetMessage());
+  }
+
+  [Fact]
+  public void StaticJsReferenceMethodReturn_ReportsCompileTimeDiagnostic()
+  {
+    var diagnostics = RunGenerator(@"
+using BunSharp;
+
+[JSExport]
+public sealed class StaticJsReferenceMethodDemo
+{
+  public StaticJsReferenceMethodDemo() { }
+
+  public static JSFunctionRef? getSharedCallback() => null;
+}");
+
+    var diagnostic = Assert.Single(diagnostics, d => d.Id == "BSG010");
+    Assert.Contains("getSharedCallback", diagnostic.GetMessage());
+    Assert.Contains("JSFunctionRef", diagnostic.GetMessage());
+  }
+
+  [Fact]
+  public void PublicStaticDelegateProperty_ReportsCompileTimeDiagnostic()
+  {
+    var diagnostics = RunGenerator(@"
+using BunSharp;
+
+public delegate string MessageCallback(string value);
+
+[JSExport]
+public sealed class StaticDelegatePropertyDemo
+{
+  public StaticDelegatePropertyDemo() { }
+
+  public static MessageCallback? SharedCallback { get; set; }
+}");
+
+    var diagnostic = Assert.Single(diagnostics, d => d.Id == "BSG011");
+    Assert.Contains("SharedCallback", diagnostic.GetMessage());
+  }
+
+  [Fact]
+  public void InternalExplicitStaticDelegateProperty_ReportsCompileTimeDiagnostic()
+  {
+    var diagnostics = RunGenerator(@"
+using BunSharp;
+
+public delegate string MessageCallback(string value);
+
+[JSExport]
+public sealed class ExplicitStaticDelegatePropertyDemo
+{
+  public ExplicitStaticDelegatePropertyDemo() { }
+
+  [JSExport]
+  internal static MessageCallback? SharedCallback { get; set; }
+}");
+
+    var diagnostic = Assert.Single(diagnostics, d => d.Id == "BSG011");
+    Assert.Contains("SharedCallback", diagnostic.GetMessage());
+  }
+
+  [Fact]
+  public void StaticDelegateMethodReturn_ReportsCompileTimeDiagnostic()
+  {
+    var diagnostics = RunGenerator(@"
+using BunSharp;
+
+public delegate string MessageCallback(string value);
+
+[JSExport]
+public sealed class StaticDelegateMethodDemo
+{
+  public StaticDelegateMethodDemo() { }
+
+  public static MessageCallback getSharedCallback() => value => value;
+}");
+
+    var diagnostic = Assert.Single(diagnostics, d => d.Id == "BSG011");
+    Assert.Contains("getSharedCallback", diagnostic.GetMessage());
+  }
+
+  [Fact]
+  public void DisabledStaticDelegateProperty_DoesNotReportStaticDelegateDiagnostic()
+  {
+    var diagnostics = RunGenerator(@"
+using BunSharp;
+
+public delegate string MessageCallback(string value);
+
+[JSExport]
+public sealed class DisabledStaticDelegatePropertyDemo
+{
+  public DisabledStaticDelegatePropertyDemo() { }
+
+  [JSExport(false)]
+  public static MessageCallback? SharedCallback { get; set; }
+}");
+
+    Assert.DoesNotContain(diagnostics, d => d.Id == "BSG011");
+  }
+
+  [Fact]
+  public void StaticJsReferenceParameter_DoesNotReportNewStaticDiagnostics()
+  {
+    var diagnostics = RunGenerator(@"
+using BunSharp;
+
+[JSExport]
+public sealed class StaticJsReferenceParameterDemo
+{
+  public StaticJsReferenceParameterDemo() { }
+
+  public static int count(JSObjectRef? value) => value is null ? 0 : 1;
+}");
+
+    Assert.DoesNotContain(diagnostics, d => d.Id == "BSG010");
+    Assert.DoesNotContain(diagnostics, d => d.Id == "BSG011");
+  }
+
   private static ImmutableArray<Diagnostic> RunGenerator(string source)
   {
     var syntaxTree = CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.Latest));

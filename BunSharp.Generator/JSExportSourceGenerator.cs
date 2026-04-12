@@ -95,6 +95,22 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor UnsupportedStaticJsReferenceExportDescriptor = new(
+        id: "BSG010",
+        title: "Unsupported static JS reference export",
+        messageFormat: "Member '{0}' cannot be exported as a static JS reference member because type '{1}' is runtime-affine. Static JS reference properties and method return values are not supported.",
+        category: DiagnosticCategory,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor UnsupportedStaticDelegateExportDescriptor = new(
+        id: "BSG011",
+        title: "Unsupported static delegate export",
+        messageFormat: "Member '{0}' cannot be exported as a static delegate member. Static delegate properties and method return values are not supported because delegate exports may capture runtime-affine JS function state.",
+        category: DiagnosticCategory,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
     private static readonly SymbolDisplayFormat FullyQualifiedFormat = new(
         globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Included,
         typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
@@ -441,6 +457,25 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             return false;
         }
 
+        if (method.IsStatic && IsRuntimeAffineStaticJsReference(returnType))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                UnsupportedStaticJsReferenceExportDescriptor,
+                method.Locations.FirstOrDefault(),
+                method.Name,
+                method.ReturnType.ToDisplayString()));
+            return false;
+        }
+
+        if (method.IsStatic && returnType.IsDelegate)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                UnsupportedStaticDelegateExportDescriptor,
+                method.Locations.FirstOrDefault(),
+                method.Name));
+            return false;
+        }
+
         var effectiveStable = exportRule.Stable;
         if (returnType.IsDelegate)
         {
@@ -506,6 +541,25 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
         if (!TryCreateTypeRef(context, property.Type, property.Name, knownTypes, exportedTypeNames, allowVoid: false, out var propertyType))
         {
+            return false;
+        }
+
+        if (property.IsStatic && IsRuntimeAffineStaticJsReference(propertyType))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                UnsupportedStaticJsReferenceExportDescriptor,
+                property.Locations.FirstOrDefault(),
+                property.Name,
+                property.Type.ToDisplayString()));
+            return false;
+        }
+
+        if (property.IsStatic && propertyType.IsDelegate)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                UnsupportedStaticDelegateExportDescriptor,
+                property.Locations.FirstOrDefault(),
+                property.Name));
             return false;
         }
 
@@ -2623,6 +2677,16 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
     private static string CSharpLiteral(string value)
     {
         return Microsoft.CodeAnalysis.CSharp.SymbolDisplay.FormatLiteral(value, quote: true);
+    }
+
+    private static bool IsRuntimeAffineStaticJsReference(TypeRefModel type)
+    {
+        return type.Kind is ExportValueKind.JSObjectRef
+            or ExportValueKind.JSFunctionRef
+            or ExportValueKind.JSArrayRef
+            or ExportValueKind.JSArrayBufferRef
+            or ExportValueKind.JSTypedArrayRef
+            or ExportValueKind.JSBufferRef;
     }
 
     private readonly struct ExportRule
