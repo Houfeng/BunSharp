@@ -379,6 +379,47 @@ public sealed class ThrowingReferenceSetterDemo
 }
 
 [JSExport]
+public sealed class ThrowingCallbackSurfaceDemo
+{
+  private string _value = string.Empty;
+
+  public ThrowingCallbackSurfaceDemo(bool fail)
+  {
+    if (fail)
+    {
+      throw new InvalidOperationException("constructor failed");
+    }
+  }
+
+  public string BrokenProperty
+  {
+    get => throw new InvalidOperationException("getter failed");
+  }
+
+  public string WritableProperty
+  {
+    get => _value;
+    set => throw new InvalidOperationException("instance setter failed");
+  }
+
+  public string boom()
+  {
+    throw new InvalidOperationException("method failed");
+  }
+
+  public static string BrokenStatic
+  {
+    get => throw new InvalidOperationException("static getter failed");
+  }
+
+  public static string WritableStatic
+  {
+    get => "ok";
+    set => throw new InvalidOperationException("static setter failed");
+  }
+}
+
+[JSExport]
 public sealed class InternalExplicitMemberDemo
 {
   public InternalExplicitMemberDemo()
@@ -521,7 +562,7 @@ public sealed class JSExportRegressionTests
       ].join('|');
     })()");
 
-    Assert.Equal("true|false|true|false|7,8,9|no-throw|true|7,8,9", env.Context.ToManagedString(result));
+    Assert.Equal("true|false|true|false|7,8,9|throw|true|7,8,9", env.Context.ToManagedString(result));
   }
 
   [Fact]
@@ -928,11 +969,153 @@ public sealed class JSExportRegressionTests
         demo.callback = (message) => message;
         return `${demo.state()}|no-throw`;
       } catch (error) {
-        return `${demo.state()}|throw`;
+        return `${demo.state()}|throw|${error instanceof Error}|${String(error.message).includes('setter failed')}`;
       }
     })()");
 
-    Assert.Equal("null|no-throw", env.Context.ToManagedString(result));
+    Assert.Equal("null|throw|true|true", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
+  public void HostFunctionExceptions_AppearAsJsErrors()
+  {
+    using var env = CreateEnvironment();
+
+    var boom = env.Context.CreateFunction("boom", (_, _, _) =>
+    {
+      throw new InvalidOperationException("host failed");
+    });
+
+    Assert.True(env.Context.SetProperty(env.Context.GlobalObject, "boom", boom));
+
+    var result = env.Context.Evaluate(@"(() => {
+      try {
+        boom();
+        return 'no-throw';
+      } catch (error) {
+        return [
+          error instanceof Error,
+          String(error.message).includes('host failed')
+        ].join('|');
+      }
+    })()");
+
+    Assert.Equal("true|true", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
+  public void ExportedInstanceMethodExceptions_AppearAsJsErrors()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      const demo = new ThrowingCallbackSurfaceDemo(false);
+      try {
+        demo.boom();
+        return 'no-throw';
+      } catch (error) {
+        return [
+          error instanceof Error,
+          String(error.message).includes('method failed')
+        ].join('|');
+      }
+    })()");
+
+    Assert.Equal("true|true", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
+  public void ExportedInstanceGetterExceptions_AppearAsJsErrors()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      const demo = new ThrowingCallbackSurfaceDemo(false);
+      try {
+        return demo.brokenProperty;
+      } catch (error) {
+        return [
+          error instanceof Error,
+          String(error.message).includes('getter failed')
+        ].join('|');
+      }
+    })()");
+
+    Assert.Equal("true|true", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
+  public void ExportedConstructorExceptions_AppearAsJsErrors()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      try {
+        new ThrowingCallbackSurfaceDemo(true);
+        return 'no-throw';
+      } catch (error) {
+        return [
+          error instanceof Error,
+          String(error.message).includes('constructor failed')
+        ].join('|');
+      }
+    })()");
+
+    Assert.Equal("true|true", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
+  public void ExportedInstanceSetterExceptions_AppearAsJsErrors()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      const demo = new ThrowingCallbackSurfaceDemo(false);
+      try {
+        demo.writableProperty = 'value';
+        return 'no-throw';
+      } catch (error) {
+        return [
+          error instanceof Error,
+          String(error.message).includes('instance setter failed')
+        ].join('|');
+      }
+    })()");
+
+    Assert.Equal("true|true", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
+  public void ExportedStaticAccessorExceptions_AppearAsJsErrors()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      let getterResult = 'no-throw';
+      let setterResult = 'no-throw';
+
+      try {
+        return ThrowingCallbackSurfaceDemo.brokenStatic;
+      } catch (error) {
+        getterResult = [
+          error instanceof Error,
+          String(error.message).includes('static getter failed')
+        ].join('|');
+      }
+
+      try {
+        ThrowingCallbackSurfaceDemo.writableStatic = 'value';
+      } catch (error) {
+        setterResult = [
+          error instanceof Error,
+          String(error.message).includes('static setter failed')
+        ].join('|');
+      }
+
+      return `${getterResult}|${setterResult}`;
+    })()");
+
+    Assert.Equal("true|true|true|true", env.Context.ToManagedString(result));
   }
 
   [Fact]
@@ -1122,6 +1305,7 @@ public sealed class JSExportRegressionTests
     env.Context.ExportType<DelegatePropertyDemo>();
     env.Context.ExportType<DelegateMethodDemo>();
     env.Context.ExportType<ThrowingReferenceSetterDemo>();
+    env.Context.ExportType<ThrowingCallbackSurfaceDemo>();
     env.Context.ExportType<InternalExplicitMemberDemo>();
     env.Context.ExportType<NestedExportHost.NestedEchoDemo>();
     env.Context.ExportType<WrapperCacheChild>();

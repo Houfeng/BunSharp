@@ -198,9 +198,9 @@ internal static unsafe class BunManagedCallbackRegistry
             var args = argc <= 0 || argv == null ? ReadOnlySpan<BunValue>.Empty : new ReadOnlySpan<BunValue>(argv, argc);
             return state.Callback(GetOrCreateContext(context), args, state.UserData);
         }
-        catch
+        catch (Exception exception)
         {
-            return BunValue.Undefined;
+            return ThrowManagedException(context, exception);
         }
     }
 
@@ -257,9 +257,9 @@ internal static unsafe class BunManagedCallbackRegistry
             var args = argc <= 0 || argv == null ? ReadOnlySpan<BunValue>.Empty : new ReadOnlySpan<BunValue>(argv, argc);
             return state.Callback(GetOrCreateContext(context), thisValue, nativePtr, args, state.UserData);
         }
-        catch
+        catch (Exception exception)
         {
-            return BunValue.Undefined;
+            return ThrowManagedException(context, exception);
         }
     }
 
@@ -278,9 +278,9 @@ internal static unsafe class BunManagedCallbackRegistry
                 ? BunValue.Undefined
                 : state.Getter(GetOrCreateContext(context), thisValue, nativePtr, state.UserData);
         }
-        catch
+        catch (Exception exception)
         {
-            return BunValue.Undefined;
+            return ThrowManagedException(context, exception);
         }
     }
 
@@ -297,8 +297,9 @@ internal static unsafe class BunManagedCallbackRegistry
             var state = GetState<ClassPropertyCallbackState>(userdata);
             state.Setter?.Invoke(GetOrCreateContext(context), thisValue, nativePtr, value, state.UserData);
         }
-        catch
+        catch (Exception exception)
         {
+            ThrowManagedException(context, exception);
         }
     }
 
@@ -316,9 +317,9 @@ internal static unsafe class BunManagedCallbackRegistry
             var args = argc <= 0 || argv == null ? ReadOnlySpan<BunValue>.Empty : new ReadOnlySpan<BunValue>(argv, argc);
             return state.Callback(GetOrCreateContext(context), klass, args, state.UserData);
         }
-        catch
+        catch (Exception exception)
         {
-            return BunValue.Undefined;
+            return ThrowManagedException(context, exception);
         }
     }
 
@@ -336,9 +337,9 @@ internal static unsafe class BunManagedCallbackRegistry
             var args = argc <= 0 || argv == null ? ReadOnlySpan<BunValue>.Empty : new ReadOnlySpan<BunValue>(argv, argc);
             return state.Callback(GetOrCreateContext(context), thisValue, args, state.UserData);
         }
-        catch
+        catch (Exception exception)
         {
-            return BunValue.Undefined;
+            return ThrowManagedException(context, exception);
         }
     }
 
@@ -357,9 +358,9 @@ internal static unsafe class BunManagedCallbackRegistry
                 ? BunValue.Undefined
                 : state.Getter(GetOrCreateContext(context), thisValue, state.UserData);
         }
-        catch
+        catch (Exception exception)
         {
-            return BunValue.Undefined;
+            return ThrowManagedException(context, exception);
         }
     }
 
@@ -376,8 +377,9 @@ internal static unsafe class BunManagedCallbackRegistry
             var state = GetState<ClassStaticPropertyCallbackState>(userdata);
             state.Setter?.Invoke(GetOrCreateContext(context), thisValue, value, state.UserData);
         }
-        catch
+        catch (Exception exception)
         {
+            ThrowManagedException(context, exception);
         }
     }
 
@@ -433,9 +435,9 @@ internal static unsafe class BunManagedCallbackRegistry
             var state = GetState<GetterSetterCallbackState>(userdata);
             return state.Getter is null ? BunValue.Undefined : state.Getter(GetOrCreateContext(context), thisValue);
         }
-        catch
+        catch (Exception exception)
         {
-            return BunValue.Undefined;
+            return ThrowManagedException(context, exception);
         }
     }
 
@@ -452,8 +454,9 @@ internal static unsafe class BunManagedCallbackRegistry
             var state = GetState<GetterSetterCallbackState>(userdata);
             state.Setter?.Invoke(GetOrCreateContext(context), thisValue, value);
         }
-        catch
+        catch (Exception exception)
         {
+            ThrowManagedException(context, exception);
         }
     }
 
@@ -487,6 +490,24 @@ internal static unsafe class BunManagedCallbackRegistry
     {
         var handle = GCHandle.FromIntPtr(userdata);
         return (TState)handle.Target!;
+    }
+
+    private static BunValue ThrowManagedException(nint context, Exception exception)
+    {
+        var error = BunNative.CreateError(context, FormatManagedException(exception));
+        return error.IsException ? BunValue.Exception : BunNative.Throw(context, error);
+    }
+
+    private static string FormatManagedException(Exception exception)
+    {
+        if (exception is AggregateException aggregate && aggregate.InnerExceptions.Count == 1)
+        {
+            exception = aggregate.InnerExceptions[0];
+        }
+
+        var message = exception.Message;
+        var typeName = exception.GetType().Name;
+        return string.IsNullOrWhiteSpace(message) ? typeName : $"{typeName}: {message}";
     }
 
     private sealed record HostCallbackState(BunManagedHostCallback Callback, nint UserData);

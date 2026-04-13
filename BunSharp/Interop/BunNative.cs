@@ -63,6 +63,43 @@ public static unsafe partial class BunNative
         finally { NativeMemory.Free(exactBuf); }
     }
 
+    public static BunValue CreateError(nint context, string message)
+    {
+        int maxCount = GetUtf8SinglePassByteCapacity(message);
+        if (maxCount <= Utf8StackThreshold)
+        {
+            byte* buf = stackalloc byte[maxCount + 1];
+            int count = Encoding.UTF8.GetBytes(message, new Span<byte>(buf, maxCount));
+            buf[count] = 0;
+            return ErrorCore(context, buf, (nuint)count);
+        }
+
+        if (maxCount <= Utf8SinglePassThreshold)
+        {
+            var rented = ArrayPool<byte>.Shared.Rent(maxCount + 1);
+            try
+            {
+                int count = Encoding.UTF8.GetBytes(message, rented.AsSpan(0, maxCount));
+                rented[count] = 0;
+                fixed (byte* buf = rented)
+                {
+                    return ErrorCore(context, buf, (nuint)count);
+                }
+            }
+            finally { ArrayPool<byte>.Shared.Return(rented); }
+        }
+
+        int exactCount = Encoding.UTF8.GetByteCount(message);
+        byte* exactBuf = (byte*)NativeMemory.Alloc((nuint)exactCount + 1);
+        try
+        {
+            Encoding.UTF8.GetBytes(message, new Span<byte>(exactBuf, exactCount));
+            exactBuf[exactCount] = 0;
+            return ErrorCore(context, exactBuf, (nuint)exactCount);
+        }
+        finally { NativeMemory.Free(exactBuf); }
+    }
+
     public static int Set(nint context, BunValue @object, string key, BunValue value)
     {
         int maxCount = GetUtf8SinglePassByteCapacity(key);
@@ -418,6 +455,9 @@ public static unsafe partial class BunNative
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_string")]
     private static partial BunValue StringCore(nint context, byte* utf8, nuint length);
 
+    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_error")]
+    private static partial BunValue ErrorCore(nint context, byte* utf8, nuint length);
+
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_object")]
     public static partial BunValue Object(nint context);
 
@@ -549,6 +589,9 @@ public static unsafe partial class BunNative
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_last_error")]
     public static partial nint LastError(nint context, out nuint length);
+
+    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_throw")]
+    public static partial BunValue Throw(nint context, BunValue error);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_call_async")]
     public static partial int CallAsync(nint context, BunValue function, BunValue thisValue, int argc, BunValue* argv);
