@@ -144,6 +144,28 @@ public sealed class ReferenceSemanticsDemo
 }
 
 [JSExport]
+public sealed class AutoDisposeExportedInstanceDemo : IDisposable
+{
+  private static int s_disposeCount;
+
+  public AutoDisposeExportedInstanceDemo()
+  {
+  }
+
+  public static int DisposeCount => s_disposeCount;
+
+  public static void Reset()
+  {
+    s_disposeCount = 0;
+  }
+
+  public void Dispose()
+  {
+    s_disposeCount++;
+  }
+}
+
+[JSExport]
 public sealed class ArrayMarshallingDemo
 {
   private int[] _numbers = [];
@@ -791,6 +813,55 @@ public sealed class JSExportRegressionTests
   }
 
   [Fact]
+  public void DisposingExportedInstance_CallsManagedDisposeExactlyOnce()
+  {
+    AutoDisposeExportedInstanceDemo.Reset();
+
+    try
+    {
+      using var env = CreateEnvironment();
+
+      var value = env.Context.Evaluate(@"(() => {
+        const demo = new AutoDisposeExportedInstanceDemo();
+        globalThis.disposeDemo = demo;
+        return demo;
+      })()");
+
+      Assert.True(BunSharp.Generated.__JSExport_AutoDisposeExportedInstanceDemo.DisposeExportedInstance(env.Context, value));
+      Assert.Equal(1, AutoDisposeExportedInstanceDemo.DisposeCount);
+    }
+    finally
+    {
+      Assert.Equal(1, AutoDisposeExportedInstanceDemo.DisposeCount);
+      AutoDisposeExportedInstanceDemo.Reset();
+    }
+  }
+
+  [Fact]
+  public void RuntimePreDestroyCleanup_CallsManagedDisposeForTrackedInstances()
+  {
+    AutoDisposeExportedInstanceDemo.Reset();
+
+    try
+    {
+      using (var env = CreateEnvironment())
+      {
+        env.Context.Evaluate(@"(() => {
+          globalThis.trackedAutoDisposeDemo = new AutoDisposeExportedInstanceDemo();
+        })()");
+
+        Assert.Equal(0, AutoDisposeExportedInstanceDemo.DisposeCount);
+      }
+
+      Assert.Equal(1, AutoDisposeExportedInstanceDemo.DisposeCount);
+    }
+    finally
+    {
+      AutoDisposeExportedInstanceDemo.Reset();
+    }
+  }
+
+  [Fact]
   public void ThrowingReferenceSetter_LeavesManagedStateUnchanged()
   {
     using var env = CreateEnvironment();
@@ -866,12 +937,78 @@ public sealed class JSExportRegressionTests
     Assert.Equal("true|true|true|true|same", env.Context.ToManagedString(result));
   }
 
+  [Fact]
+  public void TryUnwrapExported_ReturnsManagedInstanceForMatchingExport()
+  {
+    using var env = CreateEnvironment();
+
+    var value = env.Context.Evaluate(@"(() => {
+      return new WrapperCacheChild('unwrap');
+    })()");
+
+    Assert.True(env.Context.TryUnwrapExported<WrapperCacheChild>(value, out var child));
+    Assert.NotNull(child);
+    Assert.Equal("unwrap", child.Name);
+    Assert.False(env.Context.TryUnwrapExported<WrapperCacheParent>(value, out var parent));
+    Assert.Null(parent);
+  }
+
+  [Fact]
+  public void TryUnwrapExported_DoesNotRegisterTypeAsSideEffect()
+  {
+    using var runtime = BunRuntime.Create();
+    var context = runtime.Context;
+
+    Assert.True(context.IsUndefined(context.GetProperty(context.GlobalObject, "WrapperCacheChild")));
+
+    var value = context.Evaluate("({})");
+
+    Assert.False(context.TryUnwrapExported<WrapperCacheChild>(value, out var child));
+    Assert.Null(child);
+    Assert.True(context.IsUndefined(context.GetProperty(context.GlobalObject, "WrapperCacheChild")));
+  }
+
+  [Fact]
+  public void TryGetExportedValue_ReturnsExistingWrapperForManagedInstance()
+  {
+    using var env = CreateEnvironment();
+
+    var value = env.Context.Evaluate(@"(() => {
+      const parent = new WrapperCacheParent();
+      return parent.child;
+    })()");
+
+    Assert.True(env.Context.TryUnwrapExported<WrapperCacheChild>(value, out var child));
+    Assert.NotNull(child);
+    Assert.True(env.Context.TryGetExportedValue(child, out var existingValue));
+    Assert.Equal(value, existingValue);
+
+    var unmanagedChild = new WrapperCacheChild("fresh");
+    Assert.False(env.Context.TryGetExportedValue(unmanagedChild, out var missingValue));
+    Assert.Equal(default, missingValue);
+  }
+
+  [Fact]
+  public void TryGetExportedValue_DoesNotRegisterTypeAsSideEffect()
+  {
+    using var runtime = BunRuntime.Create();
+    var context = runtime.Context;
+    var instance = new WrapperCacheChild("plain");
+
+    Assert.True(context.IsUndefined(context.GetProperty(context.GlobalObject, "WrapperCacheChild")));
+
+    Assert.False(context.TryGetExportedValue(instance, out var value));
+    Assert.Equal(default, value);
+    Assert.True(context.IsUndefined(context.GetProperty(context.GlobalObject, "WrapperCacheChild")));
+  }
+
   private static TestEnvironment CreateEnvironment()
   {
     var env = new TestEnvironment();
     env.Context.ExportType<StableIdentityPropertyDemo>();
     env.Context.ExportType<StableIdentityMethodDemo>();
     env.Context.ExportType<ReferenceSemanticsDemo>();
+    env.Context.ExportType<AutoDisposeExportedInstanceDemo>();
     env.Context.ExportType<ArrayMarshallingDemo>();
     env.Context.ExportType<ReferenceArrayMarshallingDemo>();
     env.Context.ExportType<DelegatePropertyDemo>();

@@ -1,5 +1,10 @@
 namespace BunSharp;
 
+/// <summary>
+/// Retains a live JavaScript function for later invocation from managed code.
+/// Call <see cref="Dispose"/> explicitly when the function reference is no
+/// longer needed. Runtime teardown is only a fallback release path.
+/// </summary>
 public sealed class JSFunctionRef : IDisposable
 {
     private readonly JSObjectRef _objectRef;

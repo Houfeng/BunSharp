@@ -8,6 +8,8 @@ namespace BunSharp;
 /// Use this for binary payloads where callers should not need to reason about
 /// arbitrary TypedArray kinds. For non-byte TypedArrays or when the element kind
 /// matters, prefer <see cref="JSTypedArrayRef"/>.
+/// Call <see cref="Dispose"/> explicitly when the retained byte view is no
+/// longer needed. Runtime teardown is only a fallback release path.
 /// </summary>
 public sealed class JSBufferRef : IDisposable
 {

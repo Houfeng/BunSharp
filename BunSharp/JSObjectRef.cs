@@ -1,5 +1,11 @@
 namespace BunSharp;
 
+/// <summary>
+/// Retains a live JavaScript object or function across calls.
+/// Call <see cref="Dispose"/> explicitly when the reference is no longer
+/// needed. Runtime teardown is only a fallback release path and should not be
+/// treated as the normal ownership model.
+/// </summary>
 public sealed class JSObjectRef : IDisposable
 {
     private readonly ReleaseState _state;

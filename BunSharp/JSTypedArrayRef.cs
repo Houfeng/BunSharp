@@ -9,6 +9,8 @@ namespace BunSharp;
 /// side needs to inspect <see cref="Kind"/>, element count, or byte layout.
 /// For byte-oriented APIs that should accept only Uint8Array or Buffer-like
 /// values, prefer <see cref="JSBufferRef"/>.
+/// Call <see cref="Dispose"/> explicitly when the retained typed array is no
+/// longer needed. Runtime teardown is only a fallback release path.
 /// </summary>
 public sealed class JSTypedArrayRef : IDisposable
 {

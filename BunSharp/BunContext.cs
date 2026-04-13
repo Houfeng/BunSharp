@@ -360,6 +360,19 @@ public unsafe sealed class BunContext
         return BunNative.GetOpaque(Handle, target);
     }
 
+    public bool TryUnwrapExported<T>(BunValue value, out T? result) where T : class
+    {
+        VerifyThread();
+        return JSExportRegistry.TryUnwrapExported(this, value, out result);
+    }
+
+    public bool TryGetExportedValue<T>(T instance, out BunValue value) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+        VerifyThread();
+        return JSExportRegistry.TryGetExportedValue(this, instance, out value);
+    }
+
     public bool IsUndefined(BunValue value) => BunNative.IsUndefined(value) != 0;
 
     public bool IsNull(BunValue value) => BunNative.IsNull(value) != 0;

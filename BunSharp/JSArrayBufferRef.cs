@@ -10,6 +10,8 @@ namespace BunSharp;
 /// view over that buffer. For typed binary views such as Uint8Array, prefer
 /// <see cref="JSBufferRef"/> or <see cref="JSTypedArrayRef"/> depending on
 /// whether the element kind should be constrained to bytes.
+/// Call <see cref="Dispose"/> explicitly when the retained buffer is no longer
+/// needed. Runtime teardown is only a fallback release path.
 /// </summary>
 public sealed class JSArrayBufferRef : IDisposable
 {
