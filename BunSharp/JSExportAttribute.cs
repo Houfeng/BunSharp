@@ -1,7 +1,7 @@
 namespace BunSharp;
 
 /// <summary>
-/// Marks a class, method, or property for JavaScript export.
+/// Marks a class, constructor, method, or property for JavaScript export.
 /// Public members of an exported class are included by default unless they are explicitly disabled.
 /// </summary>
 /// <remarks>
@@ -15,6 +15,7 @@ namespace BunSharp;
 /// </remarks>
 [
   AttributeUsage(AttributeTargets.Class |
+  AttributeTargets.Constructor |
   AttributeTargets.Method |
   AttributeTargets.Property,
   AllowMultiple = false,

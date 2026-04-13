@@ -140,6 +140,21 @@ Compile-time restrictions:
 
 These diagnostics validate exported member shapes only. If application code stores runtime-affine values in its own global static state outside exported members, BunSharp cannot prove that code is safe across runtime lifetimes.
 
+## Constructors
+
+Exported classes can expose multiple JS-callable constructors, but BunSharp still publishes a single JavaScript `new Type(...)` entry point. The generator selects a constructor by JS-visible argument count.
+
+- `public` constructors are JS-callable by default unless they are marked with `JSExport(false)`
+- `internal` constructors are not JS-callable unless they are explicitly marked with `JSExport` or `JSExport(true)`
+- If multiple JS-callable constructors have the same JS-visible argument count, compilation fails
+- `BunContext` can be injected into exported constructors and instance methods; it does not count toward the JS-visible argument count
+- `JSExport("name")` and `Stable = true` are not valid on constructors
+
+Current scope:
+
+- Constructor overload selection uses JS-visible argument count only
+- Optional/default-value parameters and `params` constructors are not supported
+
 ## Arrays
 
 `T[]` is supported wherever any other type is supported: constructor parameters, method parameters, return values, and properties. Supported element types are `bool`, `int`, `double`, `string`, `byte[]`, `BunValue`, any `[JSExport]` class, and nested arrays.

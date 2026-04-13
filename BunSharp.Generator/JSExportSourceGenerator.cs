@@ -34,7 +34,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
     private static readonly DiagnosticDescriptor MultipleConstructorsDescriptor = new(
         id: "BSG002",
         title: "Unsupported constructor shape",
-        messageFormat: "Type '{0}' must declare exactly one public instance constructor to be JS-exportable.",
+        messageFormat: "Type '{0}' must declare at least one JS-exportable instance constructor to be JS-exportable.",
         category: DiagnosticCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -111,6 +111,38 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor ConstructorOverloadConflictDescriptor = new(
+        id: "BSG012",
+        title: "Conflicting JS constructor overloads",
+        messageFormat: "Type '{0}' has multiple JS-exportable constructors with JS-visible parameter count {1}.",
+        category: DiagnosticCategory,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor InvalidConstructorExportOptionDescriptor = new(
+        id: "BSG013",
+        title: "Unsupported constructor export option",
+        messageFormat: "Constructor '{0}' cannot use {1}.",
+        category: DiagnosticCategory,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor InvalidBunContextParameterDescriptor = new(
+        id: "BSG014",
+        title: "Unsupported BunContext parameter location",
+        messageFormat: "Member '{0}' cannot use BunContext in this position. BunContext parameters are supported only on JS-exportable constructors and instance methods.",
+        category: DiagnosticCategory,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor UnsupportedConstructorParameterDescriptor = new(
+        id: "BSG015",
+        title: "Unsupported constructor parameter feature",
+        messageFormat: "Constructor '{0}' is not supported for JS export: {1}.",
+        category: DiagnosticCategory,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
     private static readonly SymbolDisplayFormat FullyQualifiedFormat = new(
         globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Included,
         typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
@@ -139,7 +171,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             return;
         }
 
-        var knownTypes = new KnownTypeSymbols(bunValueSymbol, jsObjectRefSymbol, jsFunctionRefSymbol, jsArrayRefSymbol, jsArrayBufferRefSymbol, jsTypedArrayRefSymbol, jsBufferRefSymbol);
+        var knownTypes = new KnownTypeSymbols(bunValueSymbol, bunContextSymbol, jsObjectRefSymbol, jsFunctionRefSymbol, jsArrayRefSymbol, jsArrayBufferRefSymbol, jsTypedArrayRefSymbol, jsBufferRefSymbol);
 
         var classDeclarations = compilation.SyntaxTrees
             .SelectMany(static tree => tree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>())
@@ -248,21 +280,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             return false;
         }
 
-        var constructors = type.InstanceConstructors
-            .Where(static ctor => ctor.DeclaredAccessibility == Accessibility.Public && !ctor.IsImplicitlyDeclared)
-            .ToArray();
-
-        if (constructors.Length != 1)
-        {
-            context.ReportDiagnostic(Diagnostic.Create(
-                MultipleConstructorsDescriptor,
-                type.Locations.FirstOrDefault(),
-                type.ToDisplayString()));
-            return false;
-        }
-
-        var constructor = constructors[0];
-        if (!TryCreateParameters(context, constructor.Parameters, constructor.Name, knownTypes, exportedTypeNames, out var constructorParameters))
+        if (!TryResolveConstructorModels(context, type, jsExportAttributeSymbol, knownTypes, exportedTypeNames, out var constructors))
         {
             return false;
         }
@@ -397,13 +415,146 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             type.Name,
             typeRule.Name ?? type.Name,
             type.ToDisplayString(FullyQualifiedFormat),
-            constructorParameters,
+            constructors,
             instanceMethods,
             staticMethods,
             instanceProperties,
             staticProperties);
 
         return true;
+    }
+
+    private static bool TryResolveConstructorModels(
+        GeneratorExecutionContext context,
+        INamedTypeSymbol type,
+        INamedTypeSymbol jsExportAttributeSymbol,
+        KnownTypeSymbols knownTypes,
+        ISet<string> exportedTypeNames,
+        out ImmutableArray<ExportedConstructorModel> constructors)
+    {
+        var builder = ImmutableArray.CreateBuilder<ExportedConstructorModel>();
+        var hasExplicitDeclaredConstructors = type.InstanceConstructors.Any(static ctor => !ctor.IsImplicitlyDeclared);
+        var hasConstructorDiagnostics = false;
+
+        foreach (var constructor in type.InstanceConstructors)
+        {
+            if (constructor.IsImplicitlyDeclared)
+            {
+                if (!hasExplicitDeclaredConstructors && constructor.DeclaredAccessibility == Accessibility.Public)
+                {
+                    builder.Add(new ExportedConstructorModel(ImmutableArray<ParameterModel>.Empty));
+                }
+
+                continue;
+            }
+
+            var hasConstructorAttribute = HasAttribute(constructor, jsExportAttributeSymbol);
+            _ = TryResolveExportRule(constructor, jsExportAttributeSymbol, out var exportRule);
+            var hasExplicitEnabledExport = hasConstructorAttribute && exportRule.Enabled;
+            var constructorDisplayName = GetConstructorDisplayName(constructor);
+
+            if (exportRule.Name is not null)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    InvalidConstructorExportOptionDescriptor,
+                    constructor.Locations.FirstOrDefault(),
+                    constructorDisplayName,
+                    "JSExport(\"name\")"));
+                hasConstructorDiagnostics = true;
+                continue;
+            }
+
+            if (exportRule.HasStableOption && exportRule.Stable)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    InvalidConstructorExportOptionDescriptor,
+                    constructor.Locations.FirstOrDefault(),
+                    constructorDisplayName,
+                    "Stable = true"));
+                hasConstructorDiagnostics = true;
+                continue;
+            }
+
+            if (!IsExportAccessible(constructor.DeclaredAccessibility, hasExplicitEnabledExport))
+            {
+                if (hasExplicitEnabledExport)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        UnsupportedMemberAccessibilityDescriptor,
+                        constructor.Locations.FirstOrDefault(),
+                        constructorDisplayName,
+                        constructor.DeclaredAccessibility.ToString().ToLowerInvariant()));
+                    hasConstructorDiagnostics = true;
+                }
+
+                continue;
+            }
+
+            if (!exportRule.Enabled)
+            {
+                continue;
+            }
+
+            if (!TryCreateParameters(
+                    context,
+                    constructor.Parameters,
+                    constructorDisplayName,
+                    knownTypes,
+                    exportedTypeNames,
+                    allowInjectedBunContext: true,
+                    rejectOptionalDefaultParams: true,
+                    out var constructorParameters))
+            {
+                hasConstructorDiagnostics = true;
+                continue;
+            }
+
+            builder.Add(new ExportedConstructorModel(constructorParameters));
+        }
+
+        if (builder.Count == 0)
+        {
+            constructors = default;
+            if (!hasConstructorDiagnostics)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    MultipleConstructorsDescriptor,
+                    type.Locations.FirstOrDefault(),
+                    type.ToDisplayString()));
+            }
+
+            return false;
+        }
+
+        var conflicts = builder
+            .GroupBy(static constructor => constructor.JsVisibleParameterCount)
+            .Where(static group => group.Count() > 1)
+            .ToArray();
+
+        if (conflicts.Length > 0)
+        {
+            constructors = default;
+            foreach (var conflict in conflicts)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    ConstructorOverloadConflictDescriptor,
+                    type.Locations.FirstOrDefault(),
+                    type.ToDisplayString(),
+                    conflict.Key));
+            }
+
+            return false;
+        }
+
+        constructors = builder
+            .OrderBy(static constructor => constructor.JsVisibleParameterCount)
+            .ToImmutableArray();
+        return true;
+    }
+
+    private static string GetConstructorDisplayName(IMethodSymbol constructor)
+    {
+        return $"{constructor.ContainingType.Name}({string.Join(", ", constructor.Parameters.Select(static parameter => parameter.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)))})";
     }
 
     private static bool TryResolveMemberModel(
@@ -447,7 +598,15 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             return true;
         }
 
-        if (!TryCreateParameters(context, method.Parameters, method.Name, knownTypes, exportedTypeNames, out var parameters))
+        if (!TryCreateParameters(
+            context,
+            method.Parameters,
+            method.Name,
+            knownTypes,
+            exportedTypeNames,
+            allowInjectedBunContext: !method.IsStatic,
+            rejectOptionalDefaultParams: false,
+            out var parameters))
         {
             return false;
         }
@@ -605,11 +764,36 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         string memberName,
         KnownTypeSymbols knownTypes,
         ISet<string> exportedTypeNames,
+        bool allowInjectedBunContext,
+        bool rejectOptionalDefaultParams,
         out ImmutableArray<ParameterModel> result)
     {
         var builder = ImmutableArray.CreateBuilder<ParameterModel>(parameters.Length);
+        var hasInjectedBunContext = false;
         foreach (var parameter in parameters)
         {
+            if (rejectOptionalDefaultParams && parameter.IsParams)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    UnsupportedConstructorParameterDescriptor,
+                    parameter.Locations.FirstOrDefault(),
+                    memberName,
+                    "params parameters are not supported"));
+                result = default;
+                return false;
+            }
+
+            if (rejectOptionalDefaultParams && (parameter.IsOptional || parameter.HasExplicitDefaultValue))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    UnsupportedConstructorParameterDescriptor,
+                    parameter.Locations.FirstOrDefault(),
+                    memberName,
+                    "optional and default-value parameters are not supported"));
+                result = default;
+                return false;
+            }
+
             if (parameter.RefKind != RefKind.None)
             {
                 context.ReportDiagnostic(Diagnostic.Create(
@@ -619,6 +803,41 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                     "ref, in, and out parameters are not supported"));
                 result = default;
                 return false;
+            }
+
+            if (SymbolEqualityComparer.Default.Equals(parameter.Type, knownTypes.BunContextSymbol))
+            {
+                if (!allowInjectedBunContext)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        InvalidBunContextParameterDescriptor,
+                        parameter.Locations.FirstOrDefault(),
+                        memberName));
+                    result = default;
+                    return false;
+                }
+
+                if (hasInjectedBunContext)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        UnsupportedMemberShapeDescriptor,
+                        parameter.Locations.FirstOrDefault(),
+                        memberName,
+                        "multiple BunContext parameters are not supported"));
+                    result = default;
+                    return false;
+                }
+
+                hasInjectedBunContext = true;
+                builder.Add(new ParameterModel(
+                    parameter.Name,
+                    new TypeRefModel(
+                        ExportValueKind.BunContext,
+                        parameter.Type.ToDisplayString(FullyQualifiedFormat),
+                        helperId: null,
+                        isNullableReferenceType: false),
+                    ParameterBindingSource.InjectedContext));
+                continue;
             }
 
             if (!TryCreateTypeRef(context, parameter.Type, memberName, knownTypes, exportedTypeNames, allowVoid: false, out var typeRef))
@@ -982,7 +1201,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
         foreach (var model in models)
         {
-            foreach (var p in model.ConstructorParameters) Visit(p.Type);
+            foreach (var constructor in model.Constructors) { foreach (var p in constructor.Parameters) Visit(p.Type); }
             foreach (var m in model.InstanceMethods) { Visit(m.ReturnType); foreach (var p in m.Parameters) Visit(p.Type); }
             foreach (var m in model.StaticMethods) { Visit(m.ReturnType); foreach (var p in m.Parameters) Visit(p.Type); }
             foreach (var prop in model.InstanceProperties) Visit(prop.PropertyType);
@@ -1938,7 +2157,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.Append(", ");
             builder.Append(method.WrapperName);
             builder.Append(", argCount: ");
-            builder.Append(method.Parameters.Length.ToString(CultureInfo.InvariantCulture));
+            builder.Append(method.JsVisibleParameterCount.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine("));");
         }
         foreach (var property in model.InstanceProperties)
@@ -1955,7 +2174,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         }
         builder.AppendLine("            definition.Constructor = ConstructorCallback;");
         builder.Append("            definition.ConstructorArgCount = ");
-        builder.Append(model.ConstructorParameters.Length.ToString(CultureInfo.InvariantCulture));
+        builder.Append(model.ConstructorArgCount.ToString(CultureInfo.InvariantCulture));
         builder.AppendLine(";");
         foreach (var method in model.StaticMethods)
         {
@@ -1964,7 +2183,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.Append(", ");
             builder.Append(method.WrapperName);
             builder.Append(", argCount: ");
-            builder.Append(method.Parameters.Length.ToString(CultureInfo.InvariantCulture));
+            builder.Append(method.JsVisibleParameterCount.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine("));");
         }
         foreach (var property in model.StaticProperties)
@@ -2092,18 +2311,31 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("    {");
         builder.AppendLine("        _ = classHandle;");
         builder.AppendLine("        _ = userdata;");
-        builder.Append("        __JSExportCommon.EnsureArgumentCount(");
-        builder.Append(CSharpLiteral(model.ExportName));
-        builder.Append(", args, ");
-        builder.Append(model.ConstructorParameters.Length.ToString(CultureInfo.InvariantCulture));
+        builder.AppendLine("        switch (args.Length)");
+        builder.AppendLine("        {");
+        foreach (var constructor in model.Constructors)
+        {
+            builder.Append("            case ");
+            builder.Append(constructor.JsVisibleParameterCount.ToString(CultureInfo.InvariantCulture));
+            builder.AppendLine(":");
+            builder.AppendLine("            {");
+            AppendParameterReads(builder, constructor.Parameters, "                ");
+            builder.Append("                var instance = new ");
+            builder.Append(model.FullyQualifiedTypeName);
+            builder.Append('(');
+            builder.Append(string.Join(", ", constructor.Parameters.Select(static parameter => parameter.LocalName)));
+            builder.AppendLine(");");
+            builder.AppendLine("                return WrapManaged(context, instance);");
+            builder.AppendLine("            }");
+        }
+        var supportedConstructorArities = string.Join(", ", model.Constructors.Select(static constructor => constructor.JsVisibleParameterCount));
+        builder.AppendLine("            default:");
+        builder.Append("                throw new InvalidOperationException(");
+        builder.Append(CSharpLiteral($"JS export '{model.ExportName}' expected one of [{supportedConstructorArities}] argument count(s) but received "));
+        builder.Append(" + args.Length + ");
+        builder.Append(CSharpLiteral("."));
         builder.AppendLine(");");
-        AppendParameterReads(builder, model.ConstructorParameters, "        ");
-        builder.Append("        var instance = new ");
-        builder.Append(model.FullyQualifiedTypeName);
-        builder.Append('(');
-        builder.Append(string.Join(", ", model.ConstructorParameters.Select(static parameter => parameter.LocalName)));
-        builder.AppendLine(");");
-        builder.AppendLine("        return WrapManaged(context, instance);");
+        builder.AppendLine("        }");
         builder.AppendLine("    }");
         builder.AppendLine();
         builder.Append("    internal static global::BunSharp.BunValue WrapManaged(global::BunSharp.BunContext context, ");
@@ -2498,7 +2730,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.Append("        __JSExportCommon.EnsureArgumentCount(");
         builder.Append(CSharpLiteral($"{model.ExportName}.{method.ExportName}"));
         builder.Append(", args, ");
-        builder.Append(method.Parameters.Length.ToString(CultureInfo.InvariantCulture));
+        builder.Append(method.JsVisibleParameterCount.ToString(CultureInfo.InvariantCulture));
         builder.AppendLine(");");
         builder.Append("        var target = (");
         builder.Append(model.FullyQualifiedTypeName);
@@ -2899,7 +3131,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.Append("        __JSExportCommon.EnsureArgumentCount(");
         builder.Append(CSharpLiteral($"{model.ExportName}.{method.ExportName}"));
         builder.Append(", args, ");
-        builder.Append(method.Parameters.Length.ToString(CultureInfo.InvariantCulture));
+        builder.Append(method.JsVisibleParameterCount.ToString(CultureInfo.InvariantCulture));
         builder.AppendLine(");");
         AppendParameterReads(builder, method.Parameters, "        ");
         if (method.Stable)
@@ -3073,6 +3305,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
     private static void AppendParameterReads(StringBuilder builder, ImmutableArray<ParameterModel> parameters, string indent)
     {
+        var jsArgumentIndex = 0;
         for (var index = 0; index < parameters.Length; index++)
         {
             var parameter = parameters[index];
@@ -3080,7 +3313,15 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.Append("var ");
             builder.Append(parameter.LocalName);
             builder.Append(" = ");
-            builder.Append(ConvertFromBunValue(parameter.Type, $"args[{index}]", "context"));
+            if (parameter.BindingSource == ParameterBindingSource.InjectedContext)
+            {
+                builder.Append("context");
+            }
+            else
+            {
+                builder.Append(ConvertFromBunValue(parameter.Type, $"args[{jsArgumentIndex}]", "context"));
+                jsArgumentIndex++;
+            }
             builder.AppendLine(";");
         }
     }
@@ -3215,9 +3456,10 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
     private readonly struct KnownTypeSymbols
     {
-        public KnownTypeSymbols(INamedTypeSymbol bunValueSymbol, INamedTypeSymbol jsObjectRefSymbol, INamedTypeSymbol jsFunctionRefSymbol, INamedTypeSymbol jsArrayRefSymbol, INamedTypeSymbol jsArrayBufferRefSymbol, INamedTypeSymbol jsTypedArrayRefSymbol, INamedTypeSymbol jsBufferRefSymbol)
+        public KnownTypeSymbols(INamedTypeSymbol bunValueSymbol, INamedTypeSymbol bunContextSymbol, INamedTypeSymbol jsObjectRefSymbol, INamedTypeSymbol jsFunctionRefSymbol, INamedTypeSymbol jsArrayRefSymbol, INamedTypeSymbol jsArrayBufferRefSymbol, INamedTypeSymbol jsTypedArrayRefSymbol, INamedTypeSymbol jsBufferRefSymbol)
         {
             BunValueSymbol = bunValueSymbol;
+            BunContextSymbol = bunContextSymbol;
             JSObjectRefSymbol = jsObjectRefSymbol;
             JSFunctionRefSymbol = jsFunctionRefSymbol;
             JSArrayRefSymbol = jsArrayRefSymbol;
@@ -3227,6 +3469,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         }
 
         public INamedTypeSymbol BunValueSymbol { get; }
+
+        public INamedTypeSymbol BunContextSymbol { get; }
 
         public INamedTypeSymbol JSObjectRefSymbol { get; }
 
@@ -3241,6 +3485,33 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         public INamedTypeSymbol JSBufferRefSymbol { get; }
     }
 
+    private static int CountJsVisibleParameters(ImmutableArray<ParameterModel> parameters)
+    {
+        var count = 0;
+        for (var i = 0; i < parameters.Length; i++)
+        {
+            if (parameters[i].ConsumesJsArgument)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private readonly struct ExportedConstructorModel
+    {
+        public ExportedConstructorModel(ImmutableArray<ParameterModel> parameters)
+        {
+            Parameters = parameters;
+            JsVisibleParameterCount = CountJsVisibleParameters(parameters);
+        }
+
+        public ImmutableArray<ParameterModel> Parameters { get; }
+
+        public int JsVisibleParameterCount { get; }
+    }
+
     private readonly struct ExportedTypeModel
     {
         public ExportedTypeModel(
@@ -3248,7 +3519,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             string typeName,
             string exportName,
             string fullyQualifiedTypeName,
-            ImmutableArray<ParameterModel> constructorParameters,
+            ImmutableArray<ExportedConstructorModel> constructors,
             List<ExportedMethodModel> instanceMethods,
             List<ExportedMethodModel> staticMethods,
             List<ExportedPropertyModel> instanceProperties,
@@ -3258,7 +3529,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             TypeName = typeName;
             ExportName = exportName;
             FullyQualifiedTypeName = fullyQualifiedTypeName;
-            ConstructorParameters = constructorParameters;
+            Constructors = constructors;
             InstanceMethods = instanceMethods;
             StaticMethods = staticMethods;
             InstanceProperties = instanceProperties;
@@ -3273,7 +3544,9 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
         public string FullyQualifiedTypeName { get; }
 
-        public ImmutableArray<ParameterModel> ConstructorParameters { get; }
+    public ImmutableArray<ExportedConstructorModel> Constructors { get; }
+
+    public int ConstructorArgCount => Constructors.Length == 0 ? 0 : Constructors.Min(static constructor => constructor.JsVisibleParameterCount);
 
         public List<ExportedMethodModel> InstanceMethods { get; }
 
@@ -3300,6 +3573,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             Parameters = parameters;
             ReturnType = returnType;
             Stable = stable;
+            JsVisibleParameterCount = CountJsVisibleParameters(parameters);
         }
 
         public string MemberName { get; }
@@ -3313,6 +3587,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         public TypeRefModel ReturnType { get; }
 
         public bool Stable { get; }
+
+        public int JsVisibleParameterCount { get; }
 
         public string WrapperName => IsStatic ? $"StaticMethod_{MemberName}" : $"InstanceMethod_{MemberName}";
 
@@ -3364,17 +3640,28 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
     private readonly struct ParameterModel
     {
-        public ParameterModel(string name, TypeRefModel type)
+        public ParameterModel(string name, TypeRefModel type, ParameterBindingSource bindingSource = ParameterBindingSource.JsArgument)
         {
             Name = name;
             Type = type;
+            BindingSource = bindingSource;
         }
 
         public string Name { get; }
 
         public TypeRefModel Type { get; }
 
+        public ParameterBindingSource BindingSource { get; }
+
+        public bool ConsumesJsArgument => BindingSource == ParameterBindingSource.JsArgument;
+
         public string LocalName => Name + "Arg";
+    }
+
+    private enum ParameterBindingSource
+    {
+        JsArgument,
+        InjectedContext,
     }
 
     private sealed class TypeRefModel
@@ -3433,6 +3720,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             ExportValueKind.Bool or ExportValueKind.Int32 or ExportValueKind.Double => ExportValueSemantic.Value,
             ExportValueKind.String or ExportValueKind.ByteArray or ExportValueKind.Array => ExportValueSemantic.Snapshot,
             ExportValueKind.BunValue => ExportValueSemantic.TemporaryJsValue,
+            ExportValueKind.BunContext => ExportValueSemantic.InjectedContext,
             ExportValueKind.JSObjectRef or ExportValueKind.JSFunctionRef => ExportValueSemantic.JsReference,
             ExportValueKind.JSArrayRef => ExportValueSemantic.StableCollection,
             ExportValueKind.JSArrayBufferRef or ExportValueKind.JSTypedArrayRef or ExportValueKind.JSBufferRef => ExportValueSemantic.SharedBinary,
@@ -3451,6 +3739,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         String,
         ByteArray,
         BunValue,
+        BunContext,
         JSObjectRef,
         JSFunctionRef,
         JSArrayRef,
@@ -3468,6 +3757,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         Value,
         Snapshot,
         TemporaryJsValue,
+        InjectedContext,
         ManagedReference,
         JsReference,
         StableCollection,

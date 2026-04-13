@@ -279,6 +279,98 @@ public sealed class StaticJsReferenceParameterDemo
     Assert.DoesNotContain(diagnostics, d => d.Id == "BSG011");
   }
 
+  [Fact]
+  public void ConflictingJsVisibleConstructorCounts_ReportCompileTimeDiagnostic()
+  {
+    var diagnostics = RunGenerator(@"
+using BunSharp;
+
+[JSExport]
+public sealed class ConflictingConstructorDemo
+{
+  public ConflictingConstructorDemo() { }
+
+  [JSExport]
+  internal ConflictingConstructorDemo(BunContext context) { }
+}");
+
+    var diagnostic = Assert.Single(diagnostics, d => d.Id == "BSG012");
+    Assert.Contains("ConflictingConstructorDemo", diagnostic.GetMessage());
+    Assert.Contains("0", diagnostic.GetMessage());
+  }
+
+  [Fact]
+  public void ConstructorNameOverride_ReportsCompileTimeDiagnostic()
+  {
+    var diagnostics = RunGenerator(@"
+using BunSharp;
+
+[JSExport]
+public sealed class ConstructorNameOverrideDemo
+{
+  [JSExport(""named"")]
+  public ConstructorNameOverrideDemo() { }
+}");
+
+    var diagnostic = Assert.Single(diagnostics, d => d.Id == "BSG013");
+    Assert.Contains("ConstructorNameOverrideDemo()", diagnostic.GetMessage());
+    Assert.Contains("JSExport(\"name\")", diagnostic.GetMessage());
+  }
+
+  [Fact]
+  public void ConstructorStableOption_ReportsCompileTimeDiagnostic()
+  {
+    var diagnostics = RunGenerator(@"
+using BunSharp;
+
+[JSExport]
+public sealed class ConstructorStableDemo
+{
+  [JSExport(Stable = true)]
+  public ConstructorStableDemo() { }
+}");
+
+    var diagnostic = Assert.Single(diagnostics, d => d.Id == "BSG013");
+    Assert.Contains("ConstructorStableDemo()", diagnostic.GetMessage());
+    Assert.Contains("Stable = true", diagnostic.GetMessage());
+  }
+
+  [Fact]
+  public void OptionalConstructorParameter_ReportsCompileTimeDiagnostic()
+  {
+    var diagnostics = RunGenerator(@"
+using BunSharp;
+
+[JSExport]
+public sealed class OptionalConstructorDemo
+{
+  public OptionalConstructorDemo(int value = 1) { }
+}");
+
+    var diagnostic = Assert.Single(diagnostics, d => d.Id == "BSG015");
+    Assert.Contains("OptionalConstructorDemo(int)", diagnostic.GetMessage());
+    Assert.Contains("optional and default-value parameters", diagnostic.GetMessage());
+  }
+
+  [Fact]
+  public void StaticMethodBunContextParameter_ReportsCompileTimeDiagnostic()
+  {
+    var diagnostics = RunGenerator(@"
+using BunSharp;
+
+[JSExport]
+public sealed class StaticBunContextDemo
+{
+  public StaticBunContextDemo() { }
+
+  public static int count(BunContext context) => 1;
+}");
+
+    var diagnostic = Assert.Single(diagnostics, d => d.Id == "BSG014");
+    Assert.Contains("count", diagnostic.GetMessage());
+    Assert.Contains("BunContext", diagnostic.GetMessage());
+  }
+
   private static ImmutableArray<Diagnostic> RunGenerator(string source)
   {
     var syntaxTree = CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.Latest));

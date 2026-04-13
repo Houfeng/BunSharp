@@ -166,6 +166,62 @@ public sealed class AutoDisposeExportedInstanceDemo : IDisposable
 }
 
 [JSExport]
+public sealed class ImplicitConstructorDemo
+{
+  public string describe()
+  {
+    return "implicit";
+  }
+}
+
+[JSExport]
+public sealed class OverloadedConstructorDemo
+{
+  public OverloadedConstructorDemo()
+  {
+    Kind = "zero";
+  }
+
+  public OverloadedConstructorDemo(int value)
+  {
+    Kind = $"one:{value}";
+  }
+
+  public OverloadedConstructorDemo(int value, string label)
+  {
+    Kind = $"two:{value}:{label}";
+  }
+
+  public string Kind { get; }
+}
+
+[JSExport]
+public sealed class ContextInjectedConstructorDemo
+{
+  private readonly nint _contextHandle;
+
+  [JSExport(false)]
+  public ContextInjectedConstructorDemo()
+  {
+    State = "hidden";
+  }
+
+  [JSExport]
+  internal ContextInjectedConstructorDemo(BunContext context)
+  {
+    _contextHandle = context.Handle;
+    State = context.IsUndefined(BunValue.Undefined) ? "ctx" : "bad";
+  }
+
+  public string State { get; }
+
+  public string contextStatus(BunContext context, string suffix)
+  {
+    return _contextHandle == context.Handle ? $"{State}:{suffix}" : $"mismatch:{suffix}";
+  }
+}
+
+[JSExport]
 public sealed class ArrayMarshallingDemo
 {
   private int[] _numbers = [];
@@ -1002,6 +1058,55 @@ public sealed class JSExportRegressionTests
     Assert.True(context.IsUndefined(context.GetProperty(context.GlobalObject, "WrapperCacheChild")));
   }
 
+  [Fact]
+  public void CompilerGeneratedDefaultConstructor_IsExported()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      const demo = new ImplicitConstructorDemo();
+      return demo.describe();
+    })()");
+
+    Assert.Equal("implicit", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
+  public void Constructors_DispatchByJsVisibleArgumentCount_AndRequireExactMatch()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      const zero = new OverloadedConstructorDemo();
+      const one = new OverloadedConstructorDemo(7);
+      const two = new OverloadedConstructorDemo(7, 'x');
+
+      let exact = 'no-throw';
+      try {
+        new OverloadedConstructorDemo(7, 'x', true);
+      } catch (error) {
+        exact = 'throw';
+      }
+
+      return [zero.kind, one.kind, two.kind, exact].join('|');
+    })()");
+
+    Assert.Equal("zero|one:7|two:7:x|throw", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
+  public void ConstructorAndInstanceMethod_BunContextIsInjected_AndPublicCtorCanBeExcluded()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      const demo = new ContextInjectedConstructorDemo();
+      return [demo.state, demo.contextStatus('ok')].join('|');
+    })()");
+
+    Assert.Equal("ctx|ctx:ok", env.Context.ToManagedString(result));
+  }
+
   private static TestEnvironment CreateEnvironment()
   {
     var env = new TestEnvironment();
@@ -1009,6 +1114,9 @@ public sealed class JSExportRegressionTests
     env.Context.ExportType<StableIdentityMethodDemo>();
     env.Context.ExportType<ReferenceSemanticsDemo>();
     env.Context.ExportType<AutoDisposeExportedInstanceDemo>();
+    env.Context.ExportType<ImplicitConstructorDemo>();
+    env.Context.ExportType<OverloadedConstructorDemo>();
+    env.Context.ExportType<ContextInjectedConstructorDemo>();
     env.Context.ExportType<ArrayMarshallingDemo>();
     env.Context.ExportType<ReferenceArrayMarshallingDemo>();
     env.Context.ExportType<DelegatePropertyDemo>();
