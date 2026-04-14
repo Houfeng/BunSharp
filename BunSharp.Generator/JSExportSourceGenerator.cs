@@ -1830,11 +1830,12 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
     private static void AppendTypeModel(StringBuilder builder, ExportedTypeModel model)
     {
+        var stableMemberSlots = CreateStableMemberSlots(model);
         builder.Append("internal static class ");
         builder.Append(model.Id);
         builder.AppendLine();
         builder.AppendLine("{");
-        builder.AppendLine("    private sealed class ManagedWrapperEntry");
+        builder.AppendLine("    private readonly struct ManagedWrapperEntry");
         builder.AppendLine("    {");
         builder.AppendLine("        public ManagedWrapperEntry(object instance, nint handle, global::BunSharp.BunValue value)");
         builder.AppendLine("        {");
@@ -1850,7 +1851,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        public global::BunSharp.BunValue Value { get; }");
         builder.AppendLine("    }");
         builder.AppendLine();
-        builder.AppendLine("    private sealed class StableIdentityEntry");
+        builder.AppendLine("    private readonly struct StableIdentityEntry");
         builder.AppendLine("    {");
         builder.AppendLine("        public StableIdentityEntry(object source, global::BunSharp.BunValue value, global::System.IDisposable? ownedReference)");
         builder.AppendLine("        {");
@@ -1930,7 +1931,9 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        {");
         builder.AppendLine("            if (!_stableIdentityEntries.TryGetValue(handle, out var members))");
         builder.AppendLine("            {");
-        builder.AppendLine("                members = new Dictionary<int, StableIdentityEntry>();");
+        builder.Append("                members = new Dictionary<int, StableIdentityEntry>(");
+        builder.Append(stableMemberSlots.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        builder.AppendLine(");");
         builder.AppendLine("                _stableIdentityEntries[handle] = members;");
         builder.AppendLine("            }");
         builder.AppendLine("            var hadExisting = members.TryGetValue(memberSlot, out var existingEntry);");
@@ -2496,8 +2499,6 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("        }");
         builder.AppendLine("    }");
         builder.AppendLine();
-
-        var stableMemberSlots = CreateStableMemberSlots(model);
 
         foreach (var method in model.InstanceMethods)
         {

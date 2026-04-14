@@ -318,6 +318,9 @@ public sealed class BunRuntime : IDisposable
     internal void ReportDiagnostic(BunRuntimeDiagnosticSource source, Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
+        var handler = Error;
+        if (handler is null)
+            return;
         var errorArgs = new BunRuntimeErrorEventArgs(
             source,
             exception,
@@ -325,8 +328,7 @@ public sealed class BunRuntime : IDisposable
             Volatile.Read(ref _isDisposing) != 0,
             Environment.CurrentManagedThreadId,
             DateTimeOffset.UtcNow);
-
-        Error?.Invoke(this, errorArgs);
+        handler(this, errorArgs);
     }
 
     private static BunNativeDebuggerMode MapDebuggerMode(BunDebuggerMode debuggerMode)
