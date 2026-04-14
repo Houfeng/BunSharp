@@ -144,9 +144,9 @@ internal static unsafe class BunManagedCallbackRegistry
         return state.Getter is not null;
     }
 
-    public static BunCallbackHandle CreateFinalizer(BunManagedFinalizer callback, nint userdata)
+    public static BunCallbackHandle CreateFinalizer(BunManagedFinalizer callback, BunRuntime runtime, nint userdata)
     {
-        return new BunCallbackHandle(new FinalizerCallbackState(callback, userdata));
+        return new BunCallbackHandle(new FinalizerCallbackState(callback, runtime, userdata), runtime);
     }
 
     public static BunCallbackHandle CreateClassMethod(BunManagedClassMethod callback, nint userdata)
@@ -174,14 +174,14 @@ internal static unsafe class BunManagedCallbackRegistry
         return new BunCallbackHandle(new ClassStaticPropertyCallbackState(getter, setter, userdata));
     }
 
-    public static BunCallbackHandle CreateClassFinalizer(BunManagedClassFinalizer callback, nint userdata)
+    public static BunCallbackHandle CreateClassFinalizer(BunManagedClassFinalizer callback, BunRuntime runtime, nint userdata)
     {
-        return new BunCallbackHandle(new ClassFinalizerCallbackState(callback, userdata));
+        return new BunCallbackHandle(new ClassFinalizerCallbackState(callback, runtime, userdata), runtime);
     }
 
-    public static BunCallbackHandle CreatePersistentClassFinalizer(BunManagedClassFinalizer callback, nint userdata)
+    public static BunCallbackHandle CreatePersistentClassFinalizer(BunManagedClassFinalizer callback, BunRuntime runtime, nint userdata)
     {
-        return new BunCallbackHandle(new ClassFinalizerCallbackState(callback, userdata));
+        return new BunCallbackHandle(new ClassFinalizerCallbackState(callback, runtime, userdata), runtime);
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -217,8 +217,12 @@ internal static unsafe class BunManagedCallbackRegistry
             var state = GetState<EventCallbackState>(userdata);
             state.Callback(state.Runtime, state.UserData);
         }
-        catch
+        catch (Exception ex)
         {
+            if (TryGetState<EventCallbackState>(userdata, out var state))
+            {
+                ReportDiagnostic(state!.Runtime, BunRuntimeDiagnosticSource.EventCallback, ex);
+            }
         }
     }
 
@@ -235,11 +239,15 @@ internal static unsafe class BunManagedCallbackRegistry
             var outerHandle = GCHandle.FromIntPtr(userdata);
             if (outerHandle.Target is not BunCallbackHandle callbackHandle) { outerHandle.Free(); return; }
             var state = GetState<FinalizerCallbackState>(callbackHandle.Pointer);
-            try { state.Callback(state.UserData); } catch { }
-            callbackHandle.Dispose();
+            try { state.Callback(state.UserData); }
+            catch (Exception ex) { ReportDiagnostic(state.Runtime, BunRuntimeDiagnosticSource.Finalizer, ex); }
+
+            try { callbackHandle.Dispose(); }
+            catch (Exception ex) { ReportDiagnostic(state.Runtime, BunRuntimeDiagnosticSource.Finalizer, ex); }
         }
-        catch
+        catch (Exception ex)
         {
+            TryReportOuterHandleDiagnostic(userdata, BunRuntimeDiagnosticSource.Finalizer, ex);
         }
     }
 
@@ -396,11 +404,15 @@ internal static unsafe class BunManagedCallbackRegistry
             var outerHandle = GCHandle.FromIntPtr(userdata);
             if (outerHandle.Target is not BunCallbackHandle callbackHandle) { outerHandle.Free(); return; }
             var state = GetState<ClassFinalizerCallbackState>(callbackHandle.Pointer);
-            try { state.Callback(nativePtr, state.UserData); } catch { }
-            callbackHandle.Dispose();
+            try { state.Callback(nativePtr, state.UserData); }
+            catch (Exception ex) { ReportDiagnostic(state.Runtime, BunRuntimeDiagnosticSource.ClassFinalizer, ex); }
+
+            try { callbackHandle.Dispose(); }
+            catch (Exception ex) { ReportDiagnostic(state.Runtime, BunRuntimeDiagnosticSource.ClassFinalizer, ex); }
         }
-        catch
+        catch (Exception ex)
         {
+            TryReportOuterHandleDiagnostic(userdata, BunRuntimeDiagnosticSource.ClassFinalizer, ex);
         }
     }
 
@@ -415,10 +427,15 @@ internal static unsafe class BunManagedCallbackRegistry
         try
         {
             var state = GetState<ClassFinalizerCallbackState>(userdata);
-            try { state.Callback(nativePtr, state.UserData); } catch { }
+            try { state.Callback(nativePtr, state.UserData); }
+            catch (Exception ex) { ReportDiagnostic(state.Runtime, BunRuntimeDiagnosticSource.PersistentClassFinalizer, ex); }
         }
-        catch
+        catch (Exception ex)
         {
+            if (TryGetState<ClassFinalizerCallbackState>(userdata, out var state))
+            {
+                ReportDiagnostic(state!.Runtime, BunRuntimeDiagnosticSource.PersistentClassFinalizer, ex);
+            }
         }
     }
 
@@ -492,6 +509,39 @@ internal static unsafe class BunManagedCallbackRegistry
         return (TState)handle.Target!;
     }
 
+    private static bool TryGetState<TState>(nint userdata, out TState? state)
+        where TState : class
+    {
+        if (userdata == 0)
+        {
+            state = null;
+            return false;
+        }
+
+        var handle = GCHandle.FromIntPtr(userdata);
+        state = handle.Target as TState;
+        return state is not null;
+    }
+
+    private static void TryReportOuterHandleDiagnostic(nint userdata, BunRuntimeDiagnosticSource source, Exception exception)
+    {
+        if (userdata == 0)
+        {
+            return;
+        }
+
+        var outerHandle = GCHandle.FromIntPtr(userdata);
+        if (outerHandle.Target is BunCallbackHandle callbackHandle && callbackHandle.TryGetRuntime(out var runtime))
+        {
+            ReportDiagnostic(runtime, source, exception);
+        }
+    }
+
+    private static void ReportDiagnostic(BunRuntime runtime, BunRuntimeDiagnosticSource source, Exception exception)
+    {
+        runtime.ReportDiagnostic(source, exception);
+    }
+
     private static BunValue ThrowManagedException(nint context, Exception exception)
     {
         var error = BunNative.CreateError(context, FormatManagedException(exception));
@@ -514,7 +564,7 @@ internal static unsafe class BunManagedCallbackRegistry
 
     private sealed record EventCallbackState(BunManagedEventCallback Callback, BunRuntime Runtime, nint UserData);
 
-    private sealed record FinalizerCallbackState(BunManagedFinalizer Callback, nint UserData);
+    private sealed record FinalizerCallbackState(BunManagedFinalizer Callback, BunRuntime Runtime, nint UserData);
 
     private sealed record ClassMethodCallbackState(BunManagedClassMethod Callback, nint UserData);
 
@@ -526,7 +576,7 @@ internal static unsafe class BunManagedCallbackRegistry
 
     private sealed record ClassStaticPropertyCallbackState(BunManagedClassStaticGetter? Getter, BunManagedClassStaticSetter? Setter, nint UserData);
 
-    private sealed record ClassFinalizerCallbackState(BunManagedClassFinalizer Callback, nint UserData);
+    private sealed record ClassFinalizerCallbackState(BunManagedClassFinalizer Callback, BunRuntime Runtime, nint UserData);
 
     internal sealed class GetterSetterCallbackState
     {
@@ -547,6 +597,7 @@ internal sealed class BunCallbackHandle : IDisposable
     private nint _handlePtr;
     private nint _disposerHandlePtr;
     private readonly Delegate? _delegate;
+    private readonly BunRuntime? _runtime;
     private Action? _removeFromOwner;
 
     public BunCallbackHandle(object state)
@@ -562,6 +613,12 @@ internal sealed class BunCallbackHandle : IDisposable
         Pointer = Marshal.GetFunctionPointerForDelegate(callback);
     }
 
+    internal BunCallbackHandle(object state, BunRuntime runtime)
+        : this(state)
+    {
+        _runtime = runtime;
+    }
+
     public nint Pointer { get; }
 
     internal TState? TryGetState<TState>()
@@ -572,6 +629,12 @@ internal sealed class BunCallbackHandle : IDisposable
             return null;
 
         return GCHandle.FromIntPtr(ptr).Target as TState;
+    }
+
+    internal bool TryGetRuntime(out BunRuntime runtime)
+    {
+        runtime = _runtime!;
+        return runtime is not null;
     }
 
     public void SetDisposerHandle(nint disposerHandlePtr)

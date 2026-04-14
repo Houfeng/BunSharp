@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 using System.Threading;
 using BunSharp;
@@ -103,6 +104,8 @@ public sealed class RuntimeCleanupRegressionTests
   {
     var runtime = BunRuntime.Create();
     var executed = false;
+    BunRuntimeErrorEventArgs? observed = null;
+    runtime.Error += (_, error) => observed = error;
     runtime.Context.RegisterPreDestroyCleanup(() =>
     {
       executed = true;
@@ -116,6 +119,76 @@ public sealed class RuntimeCleanupRegressionTests
     Assert.Contains("pre-destroy", wrapped.Message);
     Assert.IsType<InvalidOperationException>(wrapped.InnerException);
     Assert.Equal("cleanup failed", wrapped.InnerException!.Message);
+
+    Assert.NotNull(observed);
+    Assert.Equal(BunRuntimeDiagnosticSource.Cleanup, observed!.Source);
+    Assert.Equal("cleanup failed", observed.Exception.Message);
+    Assert.True(observed.IsDuringRuntimeDisposal);
+    Assert.False(observed.IsBackgroundThread);
+  }
+
+  [Fact]
+  public void EventCallbackExceptions_AreReportedThroughErrorEvent()
+  {
+    using var runtime = BunRuntime.Create();
+    var thrown = 0;
+    var errors = new ConcurrentQueue<BunRuntimeErrorEventArgs>();
+
+    runtime.Error += (_, error) => errors.Enqueue(error);
+
+    runtime.SetEventCallback((_, _) =>
+    {
+      if (Interlocked.Exchange(ref thrown, 1) == 0)
+      {
+        throw new InvalidOperationException("event callback failed");
+      }
+    });
+    runtime.Wakeup();
+
+    Assert.True(SpinWait.SpinUntil(() => errors.Any(error => error.Source == BunRuntimeDiagnosticSource.EventCallback), TimeSpan.FromSeconds(2)));
+
+    var error = Assert.Single(errors.Where(item => item.Source == BunRuntimeDiagnosticSource.EventCallback));
+    Assert.Equal("event callback failed", error.Exception.Message);
+    Assert.True(error.IsBackgroundThread);
+    Assert.False(error.IsDuringRuntimeDisposal);
+  }
+
+  [Fact]
+  public void RuntimeDiagnostics_AreReportedThroughErrorEvent()
+  {
+    using var runtime = BunRuntime.Create();
+
+    BunRuntimeErrorEventArgs? observed = null;
+    runtime.Error += (_, error) => observed = error;
+
+    ReportDiagnostic(runtime, BunRuntimeDiagnosticSource.Cleanup, new InvalidOperationException("event only"));
+
+    Assert.NotNull(observed);
+    Assert.Equal(BunRuntimeDiagnosticSource.Cleanup, observed!.Source);
+    Assert.Equal("event only", observed.Exception.Message);
+  }
+
+  [Fact]
+  public void ErrorEvent_HandlerExceptions_AreNotSuppressed()
+  {
+    using var runtime = BunRuntime.Create();
+    var firstCalled = 0;
+    var secondCalled = 0;
+
+    runtime.Error += (_, _) =>
+    {
+      firstCalled++;
+      throw new InvalidOperationException("handler failed");
+    };
+    runtime.Error += (_, _) => secondCalled++;
+
+    var exception = Assert.Throws<TargetInvocationException>(() =>
+      ReportDiagnostic(runtime, BunRuntimeDiagnosticSource.Cleanup, new InvalidOperationException("source failed")));
+
+    Assert.Equal(1, firstCalled);
+    Assert.Equal(0, secondCalled);
+    Assert.IsType<InvalidOperationException>(exception.InnerException);
+    Assert.Equal("handler failed", exception.InnerException!.Message);
   }
 
   [Fact]
@@ -182,6 +255,31 @@ public sealed class RuntimeCleanupRegressionTests
     Assert.Contains(messages, message => message.Contains("object finalizer registration"));
     Assert.Contains(messages, message => message.Contains("callback handle disposal failed"));
     Assert.Contains(messages, message => message.Contains("callback handle failed"));
+  }
+
+  [Fact]
+  public void ObjectFinalizerExceptions_AreReportedThroughErrorEvent()
+  {
+    using var runtime = BunRuntime.Create();
+    var context = runtime.Context;
+    BunRuntimeErrorEventArgs? observed = null;
+    runtime.Error += (_, error) => observed = error;
+    var registration = GetOrCreateObjectFinalizerRegistration(runtime, context, context.CreateObject());
+
+    var addManagedFinalizer = registration.GetType().GetMethod("AddManagedFinalizer", BindingFlags.Instance | BindingFlags.NonPublic);
+    Assert.NotNull(addManagedFinalizer);
+
+    var added = (bool?)addManagedFinalizer!.Invoke(registration, [(BunManagedFinalizer)(_ => throw new InvalidOperationException("managed finalizer failed")), (nint)0]);
+    Assert.True(added);
+
+    var onTargetFinalized = registration.GetType().GetMethod("OnTargetFinalized", BindingFlags.Instance | BindingFlags.NonPublic);
+    Assert.NotNull(onTargetFinalized);
+    onTargetFinalized!.Invoke(registration, []);
+
+    Assert.NotNull(observed);
+    Assert.Equal(BunRuntimeDiagnosticSource.ObjectFinalizer, observed!.Source);
+    Assert.Equal("managed finalizer failed", observed.Exception.Message);
+    Assert.False(observed.IsDuringRuntimeDisposal);
   }
 
   private static int GetCleanupCount(BunRuntime runtime, string fieldName)
@@ -259,6 +357,13 @@ public sealed class RuntimeCleanupRegressionTests
     var field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
     Assert.NotNull(field);
     field!.SetValue(target, value);
+  }
+
+  private static void ReportDiagnostic(BunRuntime runtime, BunRuntimeDiagnosticSource source, Exception exception)
+  {
+    var method = typeof(BunRuntime).GetMethod("ReportDiagnostic", BindingFlags.Instance | BindingFlags.NonPublic);
+    Assert.NotNull(method);
+    method!.Invoke(runtime, [source, exception]);
   }
 
   private static List<string> CollectExceptionMessages(Exception exception)

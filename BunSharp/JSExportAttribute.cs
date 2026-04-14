@@ -66,6 +66,12 @@ public sealed class JSExportAttribute : Attribute
   /// </summary>
   /// <remarks>
   /// Stable currently applies to exported byte[] and T[] properties and method return values.
+  /// It guarantees stable JavaScript object identity for the same managed reference, but it does not
+  /// turn those exports into a live synchronized view over mutable managed storage.
+  /// If the same managed array instance is mutated in place, existing JavaScript Array or Uint8Array
+  /// values are not guaranteed to observe the new contents immediately.
+  /// Use JSBufferRef, JSTypedArrayRef, or JSArrayBufferRef when the API needs explicit shared backing
+  /// storage or live reference semantics rather than stable identity plus snapshot reuse.
   /// Delegate exports already use stable function-reference semantics by default.
   /// This option does not make unsupported static JS reference or static delegate export shapes valid.
   /// </remarks>

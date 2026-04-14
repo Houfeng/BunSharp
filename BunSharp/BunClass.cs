@@ -51,7 +51,7 @@ public sealed class BunClass : IDisposable
 
             if (finalizer is not null)
             {
-                callbackHandle = BunManagedCallbackRegistry.CreateClassFinalizer(finalizer, userdata);
+                callbackHandle = BunManagedCallbackRegistry.CreateClassFinalizer(finalizer, _runtime, userdata);
                 finalizerPointer = BunManagedCallbackRegistry.ClassFinalizerPointer;
                 var disposerHandle = GCHandle.Alloc(callbackHandle);
                 var disposerPtr = GCHandle.ToIntPtr(disposerHandle);
@@ -86,7 +86,7 @@ public sealed class BunClass : IDisposable
         ArgumentNullException.ThrowIfNull(finalizer);
         ObjectDisposedException.ThrowIf(_disposed, this);
         _runtime.VerifyThread();
-        return new BunClassPersistentFinalizer(BunManagedCallbackRegistry.CreatePersistentClassFinalizer(finalizer, userdata));
+        return new BunClassPersistentFinalizer(BunManagedCallbackRegistry.CreatePersistentClassFinalizer(finalizer, _runtime, userdata));
     }
 
     public BunValue CreateInstance(nint nativePtr, BunClassPersistentFinalizer finalizer)

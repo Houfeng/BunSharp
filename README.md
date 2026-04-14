@@ -257,6 +257,8 @@ Repeated JS reads or method calls that observe the same managed array reference 
 
 Current implementation note: when ordinary C# code directly reassigns a `Stable` property, the existing JS-side cache is not cleared immediately. It is replaced on the next related JS read, or released during object or runtime cleanup.
 
+`Stable` should be treated as stable identity plus snapshot reuse, not as a live synchronized view over mutable managed arrays. If the same managed `byte[]` or `T[]` instance is mutated in place, existing JavaScript `Uint8Array` or `Array` objects are not guaranteed to observe the new contents immediately. When the API needs shared backing storage or explicit live reference semantics, prefer `JSBufferRef`, `JSTypedArrayRef`, or `JSArrayBufferRef` instead of `Stable`.
+
 > **Current scope:** `Stable` is supported on exported `byte[]` and `T[]` properties and method return values, plus delegate properties and delegate method return values where stable function-reference semantics are the default.
 
 ## Delegates
@@ -315,12 +317,21 @@ context.Evaluate("console.log(helloFromDotNet('Bun')); ");
 
 For GUI apps or custom host loops, call `RunPendingJobs()` from the thread that created the runtime. On macOS and Linux you can poll `EventFileDescriptor`; on Windows it returns `-1`.
 
-For a cross-platform wake-up path, register `SetEventCallback()`. The callback runs on a Bun-managed background thread, so it should only signal your host loop and let the owning thread call `RunPendingJobs()` later.
+For a cross-platform wake-up path, register `SetEventCallback()`. The callback runs on a Bun-managed background thread, so it should only signal your host loop and let the owning thread call `RunPendingJobs()` later. If that callback throws, BunSharp reports the failure through the runtime `Error` event instead of silently discarding it.
+
+Use the runtime `Error` event for diagnostics from background event callbacks, finalizer fallback paths, and cleanup aggregation. Handlers run synchronously on the reporting thread, so background event-callback failures are reported from a Bun-managed background thread and cleanup/finalizer failures may be reported during runtime teardown.
+
+BunSharp does not catch exceptions thrown by `Error` handlers. If a handler throws, that exception propagates through the current reporting path immediately.
 
 ```csharp
 using BunSharp;
 
 using var runtime = BunRuntime.Create();
+
+runtime.Error += static (_, error) =>
+{
+  Console.Error.WriteLine($"[{error.Source}] {error.Exception.Message}");
+};
 
 runtime.SetEventCallback(static (_, _) =>
 {

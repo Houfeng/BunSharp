@@ -12,6 +12,7 @@ public sealed class BunRuntime : IDisposable
     private readonly int _threadId;
     private BunCallbackHandle? _eventCallbackHandle;
     private BunContext? _context;
+    private int _isDisposing;
     private bool _disposed;
 
     private BunRuntime(nint handle)
@@ -52,6 +53,15 @@ public sealed class BunRuntime : IDisposable
             return BunNative.GetEventFd(Handle);
         }
     }
+
+    /// <summary>
+    /// Raised synchronously whenever BunSharp reports a runtime diagnostic.
+    /// Handlers run on the originating thread, which may be a Bun-managed background thread
+    /// or the runtime-owning thread during cleanup/finalization paths.
+    /// Handlers should be fast, thread-safe, and must not call runtime-affine APIs from non-owning threads.
+    /// Error handler exceptions are not suppressed and propagate through the current reporting path.
+    /// </summary>
+    public event EventHandler<BunRuntimeErrorEventArgs>? Error;
 
     public static BunRuntime Create(string? cwd = null)
     {
@@ -148,6 +158,7 @@ public sealed class BunRuntime : IDisposable
     /// Registers a managed callback invoked by libbun from a background thread whenever the runtime has ready work.
     /// Pass <see langword="null"/> to unregister the current callback.
     /// The callback must be thread-safe and should only wake or signal the host loop; drive Bun itself later from the owning thread.
+    /// If the callback throws, BunSharp reports the failure through <see cref="Error"/>.
     /// </summary>
     public void SetEventCallback(BunManagedEventCallback? callback, nint userdata = 0)
     {
@@ -185,15 +196,17 @@ public sealed class BunRuntime : IDisposable
         }
 
         VerifyThread();
+        Interlocked.Exchange(ref _isDisposing, 1);
 
         List<Exception>? cleanupExceptions = null;
 
-        RunCleanupCallbacks(_preDestroyCleanupCallbacks, "pre-destroy", ref cleanupExceptions);
+        RunCleanupCallbacks(this, _preDestroyCleanupCallbacks, "pre-destroy", ref cleanupExceptions);
 
         if (Handle != 0)
         {
             BunNative.SetEventCallback(Handle, 0, 0);
             DisposeCleanupResource(
+                this,
                 Interlocked.Exchange(ref _eventCallbackHandle, null),
                 "event callback handle",
                 ref cleanupExceptions);
@@ -203,19 +216,20 @@ public sealed class BunRuntime : IDisposable
         else
         {
             DisposeCleanupResource(
+                this,
                 Interlocked.Exchange(ref _eventCallbackHandle, null),
                 "event callback handle",
                 ref cleanupExceptions);
         }
 
-        RunCleanupCallbacks(_cleanupCallbacks, "post-destroy", ref cleanupExceptions);
+        RunCleanupCallbacks(this, _cleanupCallbacks, "post-destroy", ref cleanupExceptions);
 
         if (_objectFinalizerRegistrations.Count > 0)
         {
             var registrations = _objectFinalizerRegistrations.Values.ToArray();
             _objectFinalizerRegistrations.Clear();
             for (var i = registrations.Length - 1; i >= 0; i--)
-                DisposeCleanupResource(registrations[i], "object finalizer registration", ref cleanupExceptions);
+                DisposeCleanupResource(this, registrations[i], "object finalizer registration", ref cleanupExceptions);
         }
 
         var snapshot = _ownedResources.Count > 0 ? _ownedResources.ToArray() : null;
@@ -223,7 +237,7 @@ public sealed class BunRuntime : IDisposable
         if (snapshot is not null)
         {
             for (var i = snapshot.Length - 1; i >= 0; i--)
-                DisposeCleanupResource(snapshot[i], "owned resource", ref cleanupExceptions);
+                DisposeCleanupResource(this, snapshot[i], "owned resource", ref cleanupExceptions);
         }
         if (_context is not null)
         {
@@ -292,6 +306,20 @@ public sealed class BunRuntime : IDisposable
         }
     }
 
+    internal void ReportDiagnostic(BunRuntimeDiagnosticSource source, Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        var errorArgs = new BunRuntimeErrorEventArgs(
+            source,
+            exception,
+            Environment.CurrentManagedThreadId != _threadId,
+            Volatile.Read(ref _isDisposing) != 0,
+            Environment.CurrentManagedThreadId,
+            DateTimeOffset.UtcNow);
+
+        Error?.Invoke(this, errorArgs);
+    }
+
     private static BunNativeDebuggerMode MapDebuggerMode(BunDebuggerMode debuggerMode)
     {
         return debuggerMode switch
@@ -335,6 +363,7 @@ public sealed class BunRuntime : IDisposable
     }
 
     private static void RunCleanupCallbacks(
+        BunRuntime owner,
         LinkedList<CleanupRegistration> callbacks,
         string phase,
         ref List<Exception>? exceptions)
@@ -352,6 +381,7 @@ public sealed class BunRuntime : IDisposable
             }
             catch (Exception ex)
             {
+                owner.ReportDiagnostic(BunRuntimeDiagnosticSource.Cleanup, ex);
                 exceptions ??= [];
                 exceptions.Add(new InvalidOperationException($"BunRuntime {phase} cleanup callback failed.", ex));
             }
@@ -361,6 +391,7 @@ public sealed class BunRuntime : IDisposable
     }
 
     private static void DisposeCleanupResource(
+        BunRuntime owner,
         IDisposable? resource,
         string description,
         ref List<Exception>? exceptions)
@@ -376,6 +407,7 @@ public sealed class BunRuntime : IDisposable
         }
         catch (Exception ex)
         {
+            owner.ReportDiagnostic(BunRuntimeDiagnosticSource.Cleanup, ex);
             exceptions ??= [];
             exceptions.Add(new InvalidOperationException($"BunRuntime {description} disposal failed.", ex));
         }
@@ -455,7 +487,7 @@ internal sealed class BunObjectFinalizerRegistration : IDisposable
     internal static BunObjectFinalizerRegistration? Create(BunRuntime owner, BunContext context, BunValue target)
     {
         var registration = new BunObjectFinalizerRegistration(owner, target);
-        var handle = BunManagedCallbackRegistry.CreateFinalizer(_ => registration.OnTargetFinalized(), 0);
+        var handle = BunManagedCallbackRegistry.CreateFinalizer(_ => registration.OnTargetFinalized(), owner, 0);
         try
         {
             var disposerHandle = GCHandle.Alloc(handle);
@@ -565,8 +597,9 @@ internal sealed class BunObjectFinalizerRegistration : IDisposable
             {
                 _managedFinalizer!(_managedFinalizerUserData);
             }
-            catch
+            catch (Exception ex)
             {
+                _owner.ReportDiagnostic(BunRuntimeDiagnosticSource.ObjectFinalizer, ex);
             }
         }
 
@@ -587,6 +620,7 @@ internal sealed class BunObjectFinalizerRegistration : IDisposable
                 }
                 catch (Exception ex)
                 {
+                    _owner.ReportDiagnostic(BunRuntimeDiagnosticSource.Cleanup, ex);
                     cleanupExceptions ??= [];
                     cleanupExceptions.Add(new InvalidOperationException("BunObjectFinalizerRegistration callback handle disposal failed.", ex));
                 }

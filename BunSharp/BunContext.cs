@@ -112,7 +112,7 @@ public unsafe sealed class BunContext
         }
 
         var owner = GetOwningRuntime();
-        var handle = BunManagedCallbackRegistry.CreateFinalizer(finalizer, userdata);
+        var handle = BunManagedCallbackRegistry.CreateFinalizer(finalizer, owner, userdata);
         try
         {
             var disposerHandle = GCHandle.Alloc(handle);
@@ -143,7 +143,7 @@ public unsafe sealed class BunContext
         }
 
         var owner = GetOwningRuntime();
-        var handle = BunManagedCallbackRegistry.CreateFinalizer(finalizer, userdata);
+        var handle = BunManagedCallbackRegistry.CreateFinalizer(finalizer, owner, userdata);
         try
         {
             var disposerHandle = GCHandle.Alloc(handle);
