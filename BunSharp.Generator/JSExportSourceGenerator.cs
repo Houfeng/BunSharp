@@ -2016,7 +2016,8 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
         builder.AppendLine("                _wrappersByInstance.Clear();");
         builder.AppendLine("                return global::System.Array.Empty<nint>();");
         builder.AppendLine("            }");
-        builder.AppendLine("            var handles = _trackedHandles.ToArray();");
+        builder.AppendLine("            var handles = new nint[_trackedHandles.Count];");
+        builder.AppendLine("            _trackedHandles.CopyTo(handles);");
         builder.AppendLine("            _trackedHandles.Clear();");
         builder.AppendLine("            _wrappersByHandle.Clear();");
         builder.AppendLine("            _wrappersByInstance.Clear();");
