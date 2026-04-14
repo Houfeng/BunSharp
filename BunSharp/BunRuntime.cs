@@ -614,34 +614,28 @@ internal sealed class BunObjectFinalizerRegistration : IDisposable
             }
         }
 
-        BunCallbackHandle[]? callbackHandles = null;
-        if (_callbackHandles.Count > 0)
-        {
-            callbackHandles = new BunCallbackHandle[_callbackHandles.Count];
-            _callbackHandles.CopyTo(callbackHandles);
-        }
-        _callbackHandles.Clear();
         _propertyCallbacks.Clear();
         _managedFinalizer = null;
         _managedFinalizerUserData = 0;
         _hasManagedFinalizer = false;
 
-        if (callbackHandles is not null)
+        // BunCallbackHandle.Dispose() never calls back into _callbackHandles
+        // (SetRemoveFromOwner is never set on these handles), so no snapshot needed.
+        // _disposed = true guards against re-entry, so iterating then clearing is safe.
+        foreach (var handle in _callbackHandles)
         {
-            for (var i = callbackHandles.Length - 1; i >= 0; i--)
+            try
             {
-                try
-                {
-                    callbackHandles[i].Dispose();
-                }
-                catch (Exception ex)
-                {
-                    _owner.ReportDiagnostic(BunRuntimeDiagnosticSource.Cleanup, ex);
-                    cleanupExceptions ??= [];
-                    cleanupExceptions.Add(new InvalidOperationException("BunObjectFinalizerRegistration callback handle disposal failed.", ex));
-                }
+                handle.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _owner.ReportDiagnostic(BunRuntimeDiagnosticSource.Cleanup, ex);
+                cleanupExceptions ??= [];
+                cleanupExceptions.Add(new InvalidOperationException("BunObjectFinalizerRegistration callback handle disposal failed.", ex));
             }
         }
+        _callbackHandles.Clear();
 
         if (cleanupExceptions is not null)
         {
