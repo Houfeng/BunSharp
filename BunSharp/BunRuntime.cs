@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using BunSharp.Interop;
@@ -230,13 +229,19 @@ public sealed class BunRuntime : IDisposable
 
         if (_objectFinalizerRegistrations.Count > 0)
         {
-            var registrations = _objectFinalizerRegistrations.Values.ToArray();
+            var registrations = new BunObjectFinalizerRegistration[_objectFinalizerRegistrations.Count];
+            _objectFinalizerRegistrations.Values.CopyTo(registrations, 0);
             _objectFinalizerRegistrations.Clear();
             for (var i = registrations.Length - 1; i >= 0; i--)
                 DisposeCleanupResource(this, registrations[i], "object finalizer registration", ref cleanupExceptions);
         }
 
-        var snapshot = _ownedResources.Count > 0 ? _ownedResources.ToArray() : null;
+        IDisposable[]? snapshot = null;
+        if (_ownedResources.Count > 0)
+        {
+            snapshot = new IDisposable[_ownedResources.Count];
+            _ownedResources.CopyTo(snapshot);
+        }
         _ownedResources.Clear();
         if (snapshot is not null)
         {
@@ -609,7 +614,12 @@ internal sealed class BunObjectFinalizerRegistration : IDisposable
             }
         }
 
-        var callbackHandles = _callbackHandles.Count > 0 ? _callbackHandles.ToArray() : null;
+        BunCallbackHandle[]? callbackHandles = null;
+        if (_callbackHandles.Count > 0)
+        {
+            callbackHandles = new BunCallbackHandle[_callbackHandles.Count];
+            _callbackHandles.CopyTo(callbackHandles);
+        }
         _callbackHandles.Clear();
         _propertyCallbacks.Clear();
         _managedFinalizer = null;
