@@ -221,6 +221,8 @@ internal static unsafe class BunManagedCallbackRegistry
         {
             if (TryGetState<EventCallbackState>(userdata, out var state))
             {
+                // This callback is entered from a native event-loop notification path.
+                // Report through the runtime instead of rethrowing across the unmanaged boundary.
                 ReportDiagnostic(state!.Runtime, BunRuntimeDiagnosticSource.EventCallback, ex);
             }
         }
@@ -240,13 +242,25 @@ internal static unsafe class BunManagedCallbackRegistry
             if (outerHandle.Target is not BunCallbackHandle callbackHandle) { outerHandle.Free(); return; }
             var state = GetState<FinalizerCallbackState>(callbackHandle.Pointer);
             try { state.Callback(state.UserData); }
-            catch (Exception ex) { ReportDiagnostic(state.Runtime, BunRuntimeDiagnosticSource.Finalizer, ex); }
+            catch (Exception ex)
+            {
+                // Finalizer callbacks run from native-owned teardown paths.
+                // Report through the runtime instead of rethrowing across the unmanaged boundary.
+                ReportDiagnostic(state.Runtime, BunRuntimeDiagnosticSource.Finalizer, ex);
+            }
 
             try { callbackHandle.Dispose(); }
-            catch (Exception ex) { ReportDiagnostic(state.Runtime, BunRuntimeDiagnosticSource.Finalizer, ex); }
+            catch (Exception ex)
+            {
+                // Finalizer handle disposal is best-effort during native teardown.
+                // Report through the runtime instead of rethrowing across the unmanaged boundary.
+                ReportDiagnostic(state.Runtime, BunRuntimeDiagnosticSource.Finalizer, ex);
+            }
         }
         catch (Exception ex)
         {
+            // If the outer handle is still intact, surface the failure through the runtime.
+            // There is no safe managed caller here that can observe a rethrow directly.
             TryReportOuterHandleDiagnostic(userdata, BunRuntimeDiagnosticSource.Finalizer, ex);
         }
     }
@@ -405,13 +419,25 @@ internal static unsafe class BunManagedCallbackRegistry
             if (outerHandle.Target is not BunCallbackHandle callbackHandle) { outerHandle.Free(); return; }
             var state = GetState<ClassFinalizerCallbackState>(callbackHandle.Pointer);
             try { state.Callback(nativePtr, state.UserData); }
-            catch (Exception ex) { ReportDiagnostic(state.Runtime, BunRuntimeDiagnosticSource.ClassFinalizer, ex); }
+            catch (Exception ex)
+            {
+                // Class finalizers run from native-owned teardown paths.
+                // Report through the runtime instead of rethrowing across the unmanaged boundary.
+                ReportDiagnostic(state.Runtime, BunRuntimeDiagnosticSource.ClassFinalizer, ex);
+            }
 
             try { callbackHandle.Dispose(); }
-            catch (Exception ex) { ReportDiagnostic(state.Runtime, BunRuntimeDiagnosticSource.ClassFinalizer, ex); }
+            catch (Exception ex)
+            {
+                // Finalizer handle disposal is best-effort during native teardown.
+                // Report through the runtime instead of rethrowing across the unmanaged boundary.
+                ReportDiagnostic(state.Runtime, BunRuntimeDiagnosticSource.ClassFinalizer, ex);
+            }
         }
         catch (Exception ex)
         {
+            // If the outer handle is still intact, surface the failure through the runtime.
+            // There is no safe managed caller here that can observe a rethrow directly.
             TryReportOuterHandleDiagnostic(userdata, BunRuntimeDiagnosticSource.ClassFinalizer, ex);
         }
     }
@@ -428,12 +454,19 @@ internal static unsafe class BunManagedCallbackRegistry
         {
             var state = GetState<ClassFinalizerCallbackState>(userdata);
             try { state.Callback(nativePtr, state.UserData); }
-            catch (Exception ex) { ReportDiagnostic(state.Runtime, BunRuntimeDiagnosticSource.PersistentClassFinalizer, ex); }
+            catch (Exception ex)
+            {
+                // Persistent class finalizers run from native-owned teardown paths.
+                // Report through the runtime instead of rethrowing across the unmanaged boundary.
+                ReportDiagnostic(state.Runtime, BunRuntimeDiagnosticSource.PersistentClassFinalizer, ex);
+            }
         }
         catch (Exception ex)
         {
             if (TryGetState<ClassFinalizerCallbackState>(userdata, out var state))
             {
+                // If state recovery still succeeds, surface the failure through the runtime.
+                // There is no safe managed caller here that can observe a rethrow directly.
                 ReportDiagnostic(state!.Runtime, BunRuntimeDiagnosticSource.PersistentClassFinalizer, ex);
             }
         }
@@ -497,8 +530,11 @@ internal static unsafe class BunManagedCallbackRegistry
                 outerHandle.Free();
             }
         }
-        catch
+        catch (Exception ex)
         {
+            // Native disposer callbacks have no managed caller that can safely observe a rethrow.
+            // Report through the runtime when the callback handle still carries runtime ownership.
+            TryReportOuterHandleDiagnostic(userdata, BunRuntimeDiagnosticSource.Cleanup, ex);
         }
     }
 

@@ -599,6 +599,8 @@ internal sealed class BunObjectFinalizerRegistration : IDisposable
             }
             catch (Exception ex)
             {
+                // Object finalizers run while runtime-owned cleanup is already in progress.
+                // Report through the runtime and continue releasing remaining resources.
                 _owner.ReportDiagnostic(BunRuntimeDiagnosticSource.ObjectFinalizer, ex);
             }
         }
