@@ -66,7 +66,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
     private static readonly DiagnosticDescriptor UnsupportedStableDescriptor = new(
         id: "BSG006",
         title: "Unsupported stable JS identity option",
-        messageFormat: "Member '{0}' cannot use Stable with type '{1}'. Stable is currently supported only on exported byte[] and T[] properties and method return values.",
+        messageFormat: "Member '{0}' cannot use Stable with type '{1}'. Stable is currently supported only on exported string, byte[], and T[] properties and method return values.",
         category: DiagnosticCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -3695,7 +3695,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
 
         public bool ShouldDisposePreviousValueOnReplacement => Semantic is ExportValueSemantic.JsReference or ExportValueSemantic.StableCollection or ExportValueSemantic.SharedBinary;
 
-        public bool CanUseStableOption => Kind is ExportValueKind.ByteArray or ExportValueKind.Array;
+        public bool CanUseStableOption => Kind is ExportValueKind.String or ExportValueKind.ByteArray or ExportValueKind.Array;
 
         public bool IsDelegate => Kind == ExportValueKind.Delegate;
     }

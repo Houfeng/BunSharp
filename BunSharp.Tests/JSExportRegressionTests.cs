@@ -492,6 +492,60 @@ public sealed class WrapperCacheParent
   }
 }
 
+[JSExport]
+public sealed class StableStringDemo
+{
+  private static readonly string StaticLabelA = "static-a";
+  private static readonly string StaticLabelB = "static-b";
+
+  private string _label = "hello";
+  private string? _tag = "tag";
+  private bool _useAlt;
+
+  public StableStringDemo()
+  {
+  }
+
+  [JSExport(Stable = true)]
+  public string Label
+  {
+    get => _label;
+    set => _label = value;
+  }
+
+  [JSExport(Stable = true)]
+  public string? Tag
+  {
+    get => _tag;
+    set => _tag = value;
+  }
+
+  [JSExport(Stable = true)]
+  public static string StaticLabel { get; private set; } = StaticLabelA;
+
+  [JSExport(Stable = true)]
+  public string getLabel(bool alt)
+  {
+    return alt ? "alt" : _label;
+  }
+
+  [JSExport(Stable = true)]
+  public string? getTag()
+  {
+    return _tag;
+  }
+
+  [JSExport(Stable = true)]
+  public static string getStaticLabel(bool alt)
+  {
+    return alt ? StaticLabelB : StaticLabelA;
+  }
+
+  public void setLabel(string value) => _label = value;
+  public void clearTag() => _tag = null;
+  public static void setStaticLabel(string value) => StaticLabel = value;
+}
+
 public sealed class JSExportRegressionTests
 {
   [Fact]
@@ -1290,11 +1344,116 @@ public sealed class JSExportRegressionTests
     Assert.Equal("ctx|ctx:ok", env.Context.ToManagedString(result));
   }
 
+  [Fact]
+  public void Stable_OnStringProperty_ReusesJsStringUntilReferenceChanges()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      const demo = new StableStringDemo();
+
+      const label1 = demo.label;
+      const label2 = demo.label;
+
+      demo.setLabel('world');
+      const label3 = demo.label;
+      const label4 = demo.label;
+
+      return [
+        label1 === label2,
+        label1 !== label3,
+        label3 === label4,
+        label1,
+        label3
+      ].join('|');
+    })()");
+
+    Assert.Equal("true|true|true|hello|world", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
+  public void Stable_OnNullableStringProperty_ClearsAndRestoresCache()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      const demo = new StableStringDemo();
+
+      const tag1 = demo.tag;
+      const tag2 = demo.tag;
+      demo.clearTag();
+      const tagNull = demo.tag;
+      demo.tag = 'restored';
+      const tag3 = demo.tag;
+      const tag4 = demo.tag;
+
+      return [
+        tag1 === tag2,
+        tagNull === null,
+        tag3 === tag4,
+        tag1,
+        String(tagNull),
+        tag3
+      ].join('|');
+    })()");
+
+    Assert.Equal("true|true|true|tag|null|restored", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
+  public void Stable_OnStringMethod_ReusesJsStringForSameReturnReference()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      const demo = new StableStringDemo();
+
+      const a1 = demo.getLabel(false);
+      const a2 = demo.getLabel(false);
+      const b  = demo.getLabel(true);
+      const a3 = demo.getLabel(false);
+
+      return [
+        a1 === a2,
+        a1 !== b,
+        a1 === a3,
+        a1,
+        b
+      ].join('|');
+    })()");
+
+    Assert.Equal("true|true|true|hello|alt", env.Context.ToManagedString(result));
+  }
+
+  [Fact]
+  public void Stable_OnStaticStringMethod_ReusesJsStringForSameReturnReference()
+  {
+    using var env = CreateEnvironment();
+
+    var result = env.Context.Evaluate(@"(() => {
+      const a1 = StableStringDemo.getStaticLabel(false);
+      const a2 = StableStringDemo.getStaticLabel(false);
+      const b  = StableStringDemo.getStaticLabel(true);
+      const a3 = StableStringDemo.getStaticLabel(false);
+
+      return [
+        a1 === a2,
+        a1 !== b,
+        a1 === a3,
+        a1,
+        b
+      ].join('|');
+    })()");
+
+    Assert.Equal("true|true|true|static-a|static-b", env.Context.ToManagedString(result));
+  }
+
   private static TestEnvironment CreateEnvironment()
   {
     var env = new TestEnvironment();
     env.Context.ExportType<StableIdentityPropertyDemo>();
     env.Context.ExportType<StableIdentityMethodDemo>();
+    env.Context.ExportType<StableStringDemo>();
     env.Context.ExportType<ReferenceSemanticsDemo>();
     env.Context.ExportType<AutoDisposeExportedInstanceDemo>();
     env.Context.ExportType<ImplicitConstructorDemo>();

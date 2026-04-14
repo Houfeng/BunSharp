@@ -65,9 +65,15 @@ public sealed class JSExportAttribute : Attribute
   /// Requests stable JavaScript identity for supported exported properties and method return values.
   /// </summary>
   /// <remarks>
-  /// Stable currently applies to exported byte[] and T[] properties and method return values.
-  /// It guarantees stable JavaScript object identity for the same managed reference, but it does not
-  /// turn those exports into a live synchronized view over mutable managed storage.
+  /// Stable currently applies to exported <c>string</c>, <c>byte[]</c>, and <c>T[]</c> properties
+  /// and method return values.
+  /// It guarantees stable JavaScript object identity for the same managed reference: as long as the
+  /// property or method returns the same .NET object reference, the same JavaScript value is reused
+  /// without re-encoding or re-allocating.
+  /// For <c>string</c>, stable identity is determined by .NET reference equality, so interned or
+  /// constant strings benefit most. Mutating a string field to a new value (even with equal content)
+  /// clears the cache and causes a new JS string to be created on the next read.
+  /// Stable does not turn exports into a live synchronized view over mutable managed storage.
   /// If the same managed array instance is mutated in place, existing JavaScript Array or Uint8Array
   /// values are not guaranteed to observe the new contents immediately.
   /// Use JSBufferRef, JSTypedArrayRef, or JSArrayBufferRef when the API needs explicit shared backing
