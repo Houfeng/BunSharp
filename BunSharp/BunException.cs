@@ -1,3 +1,5 @@
+using System;
+
 namespace BunSharp;
 
 public sealed class BunException : Exception

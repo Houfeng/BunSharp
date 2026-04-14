@@ -1,3 +1,4 @@
+using System;
 using BunSharp.Interop;
 
 namespace BunSharp;
