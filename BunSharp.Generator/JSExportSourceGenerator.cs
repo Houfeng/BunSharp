@@ -2754,7 +2754,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.AppendLine("        }");
             builder.Append("        if (registration.TryGetStableIdentityValue(nativePtr, ");
             builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-            builder.AppendLine(", result, out var cached))");
+            builder.AppendLine(", result!, out var cached))");
             builder.AppendLine("        {");
             builder.AppendLine("            return cached;");
             builder.AppendLine("        }");
@@ -2763,7 +2763,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.AppendLine(";");
             builder.Append("        registration.CacheStableIdentityValue(nativePtr, ");
             builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-            builder.AppendLine(", result, value);");
+            builder.AppendLine(", result!, value);");
             builder.AppendLine("        return value;");
         }
         else
@@ -2803,7 +2803,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.AppendLine("        }");
                 builder.Append("        if (registration.TryGetStableIdentityValue(nativePtr, ");
                 builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-                builder.AppendLine(", source, out var cached))");
+                builder.AppendLine(", source!, out var cached))");
                 builder.AppendLine("        {");
                 builder.AppendLine("            return cached;");
                 builder.AppendLine("        }");
@@ -2812,7 +2812,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.AppendLine("(context, source);");
                 builder.Append("        registration.CacheStableIdentityValue(nativePtr, ");
                 builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-                builder.AppendLine(", source, result);");
+                builder.AppendLine(", source!, result);");
                 builder.AppendLine("        return result;");
             }
             else if (property.Stable)
@@ -2830,7 +2830,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.AppendLine("        }");
                 builder.Append("        if (registration.TryGetStableIdentityValue(nativePtr, ");
                 builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-                builder.AppendLine(", source, out var cached))");
+                builder.AppendLine(", source!, out var cached))");
                 builder.AppendLine("        {");
                 builder.AppendLine("            return cached;");
                 builder.AppendLine("        }");
@@ -2839,7 +2839,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.AppendLine(";");
                 builder.Append("        registration.CacheStableIdentityValue(nativePtr, ");
                 builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-                builder.AppendLine(", source, result);");
+                builder.AppendLine(", source!, result);");
                 builder.AppendLine("        return result;");
             }
             else
@@ -2926,7 +2926,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.AppendLine("        {");
                 builder.Append("            registration.CacheStableIdentityValue(nativePtr, ");
                 builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-                builder.AppendLine(", nextValue, value);");
+                builder.AppendLine(", nextValue!, value);");
                 builder.AppendLine("        }");
             }
             else
@@ -2972,7 +2972,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.AppendLine("        }");
                 builder.Append("        if (registration.TryGetStableIdentityValue(0, ");
                 builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-                builder.AppendLine(", source, out var cached))");
+                builder.AppendLine(", source!, out var cached))");
                 builder.AppendLine("        {");
                 builder.AppendLine("            return cached;");
                 builder.AppendLine("        }");
@@ -2981,7 +2981,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.AppendLine("(context, source);");
                 builder.Append("        registration.CacheStableIdentityValue(0, ");
                 builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-                builder.AppendLine(", source, result);");
+                builder.AppendLine(", source!, result);");
                 builder.AppendLine("        return result;");
             }
             else if (property.Stable)
@@ -3001,7 +3001,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.AppendLine("        }");
                 builder.Append("        if (registration.TryGetStableIdentityValue(0, ");
                 builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-                builder.AppendLine(", source, out var cached))");
+                builder.AppendLine(", source!, out var cached))");
                 builder.AppendLine("        {");
                 builder.AppendLine("            return cached;");
                 builder.AppendLine("        }");
@@ -3010,7 +3010,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.AppendLine(";");
                 builder.Append("        registration.CacheStableIdentityValue(0, ");
                 builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-                builder.AppendLine(", source, result);");
+                builder.AppendLine(", source!, result);");
                 builder.AppendLine("        return result;");
             }
             else
@@ -3103,7 +3103,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
                 builder.AppendLine("        {");
                 builder.Append("            registration.CacheStableIdentityValue(0, ");
                 builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-                builder.AppendLine(", nextValue, value);");
+                builder.AppendLine(", nextValue!, value);");
                 builder.AppendLine("        }");
             }
             else
@@ -3154,7 +3154,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.AppendLine("        }");
             builder.Append("        if (registration.TryGetStableIdentityValue(0, ");
             builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-            builder.AppendLine(", result, out var cached))");
+            builder.AppendLine(", result!, out var cached))");
             builder.AppendLine("        {");
             builder.AppendLine("            return cached;");
             builder.AppendLine("        }");
@@ -3163,7 +3163,7 @@ public sealed class JSExportSourceGenerator : ISourceGenerator
             builder.AppendLine(";");
             builder.Append("        registration.CacheStableIdentityValue(0, ");
             builder.Append(stableMemberSlot.ToString(CultureInfo.InvariantCulture));
-            builder.AppendLine(", result, value);");
+            builder.AppendLine(", result!, value);");
             builder.AppendLine("        return value;");
         }
         else
