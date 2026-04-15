@@ -3,7 +3,10 @@ namespace BunSharp;
 /// <summary>
 /// Result of a non-blocking embed event-loop tick from <see cref="BunRuntime.RunPendingJobs"/>.
 /// </summary>
-public enum BunPendingJobsResult : byte
+// Keep the default int backing type because this enum crosses the native ABI
+// as the return value of bun_run_pending_jobs(). C enums in bun_embed.h are
+// int-sized here, so shrinking the managed type can break P/Invoke marshalling.
+public enum BunPendingJobsResult
 {
     /// <summary>Runtime is fully idle: no queued work and no active handles/timers.</summary>
     Idle = 0,

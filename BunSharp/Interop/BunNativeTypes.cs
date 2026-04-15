@@ -2,7 +2,10 @@ using System.Runtime.InteropServices;
 
 namespace BunSharp.Interop;
 
-internal enum BunNativeDebuggerMode:byte
+// Keep the default int backing type because this enum is embedded in
+// BunInitializeOptions, which must stay layout-compatible with the C struct in
+// bun_embed.h.
+internal enum BunNativeDebuggerMode
 {
     Off = 0,
     Attach = 1,
@@ -10,7 +13,10 @@ internal enum BunNativeDebuggerMode:byte
     Break = 3,
 }
 
-public enum BunTypedArrayKind: byte
+// Keep the default int backing type because this enum is used in native-facing
+// P/Invoke signatures and sequential structs, so its width must match the C
+// enum layout in bun_embed.h.
+public enum BunTypedArrayKind
 {
     Int8Array = 0,
     Uint8Array = 1,
