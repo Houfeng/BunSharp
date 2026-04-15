@@ -307,6 +307,11 @@ public static class Program
     var options = CreateScriptRuntimeOptions(scriptPath);
     using var runtime = BunRuntime.Create(options);
 
+    while (runtime.RunPendingJobs()== BunPendingJobsResult.Spin)
+    {
+      Console.WriteLine("RunPendingJobs spinning...");
+    }
+
     var context = runtime.Context;
     ConfigureContext(context);
     context.EvaluateFile(scriptPath);
