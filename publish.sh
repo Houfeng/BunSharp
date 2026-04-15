@@ -6,6 +6,9 @@ if [[ -z "${NUGET_KEY:-}" ]]; then
   exit 1
 fi
 
+echo "==> Cleaning previous builds..."
+rm -rf artifacts/nuget
+
 echo "==> Building BunSharp.Generator..."
 dotnet build BunSharp.Generator/BunSharp.Generator.csproj -c Release
 
