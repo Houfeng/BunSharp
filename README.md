@@ -315,7 +315,15 @@ context.Evaluate("console.log(helloFromDotNet('Bun')); ");
 
 ## Event Loop Integration
 
-For GUI apps or custom host loops, call `RunPendingJobs()` from the thread that created the runtime. On macOS and Linux you can poll `EventFileDescriptor`; on Windows it returns `-1`.
+`RunPendingJobs()` performs a single non-blocking tick and returns a `BunPendingJobsResult`:
+
+| Value  | Meaning |
+|--------|---------||
+| `Idle` | Fully idle — no active handles or pending work. |
+| `Spin` | More work is runnable immediately; call again without waiting. |
+| `Wait` | Runtime is active but waiting for I/O or timers; return to your host loop. |
+
+On macOS and Linux you can poll `EventFileDescriptor` and use `GetWaitHint()` as the timeout so JS timers fire on time; on Windows `EventFileDescriptor` returns `-1`.
 
 For a cross-platform wake-up path, register `SetEventCallback()`. The callback runs on a Bun-managed background thread, so it should only signal your host loop and let the owning thread call `RunPendingJobs()` later. If that callback throws, BunSharp reports the failure through the runtime `Error` event instead of silently discarding it.
 
@@ -338,8 +346,11 @@ runtime.SetEventCallback(static (_, _) =>
   // Wake your UI loop here, e.g. post to SynchronizationContext or enqueue work.
 });
 
-while (runtime.RunPendingJobs())
+BunPendingJobsResult result;
+while ((result = runtime.RunPendingJobs()) != BunPendingJobsResult.Idle)
 {
+    // Spin means more work is ready now; Wait means the runtime is
+    // waiting for I/O or timers — yield to your host loop.
 }
 ```
 

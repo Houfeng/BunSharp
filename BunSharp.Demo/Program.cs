@@ -656,9 +656,11 @@ public static class Program
 
   private static void DrainPendingJobs(BunRuntime runtime)
   {
-    while (runtime.RunPendingJobs())
+    BunPendingJobsResult result;
+    while ((result = runtime.RunPendingJobs()) != BunPendingJobsResult.Idle)
     {
-      Thread.Sleep(16);
+      if (result == BunPendingJobsResult.Wait)
+        Thread.Sleep(16);
     }
   }
 

@@ -2,7 +2,7 @@ using System;
 
 namespace BunSharp;
 
-public enum BunRuntimeDiagnosticSource
+public enum BunRuntimeDiagnosticSource: byte
 {
     EventCallback,
     Cleanup,

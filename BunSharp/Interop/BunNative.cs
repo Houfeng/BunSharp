@@ -2,6 +2,7 @@ using System;
 using System.Buffers;
 using System.Runtime.InteropServices;
 using System.Text;
+using BunSharp;
 
 namespace BunSharp.Interop;
 
@@ -433,10 +434,13 @@ public static unsafe partial class BunNative
     private static partial BunValue EvalFileCore(nint context, byte* path, nuint pathLength);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_run_pending_jobs")]
-    public static partial int RunPendingJobs(nint runtime);
+    public static partial BunPendingJobsResult RunPendingJobs(nint runtime);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_get_event_fd")]
     public static partial int GetEventFd(nint runtime);
+
+    [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_get_wait_hint")]
+    public static partial long GetWaitHint(nint runtime);
 
     [LibraryImport(BunNativeLibraryResolver.LibraryName, EntryPoint = "bun_wakeup")]
     public static partial void Wakeup(nint runtime);

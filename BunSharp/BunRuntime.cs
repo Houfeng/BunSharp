@@ -43,8 +43,12 @@ public sealed class BunRuntime : IDisposable
     }
 
     /// <summary>
-    /// Gets the runtime event-loop file descriptor when the platform exposes one.
-    /// Returns -1 on Windows and on platforms where libbun cannot provide a pollable descriptor.
+    /// Gets the underlying OS event loop file descriptor (epoll fd on Linux, kqueue fd on macOS).
+    /// The fd becomes readable when I/O is ready or <see cref="Wakeup"/> / async calls are invoked from another thread.
+    /// JS timers are NOT signaled through this fd — use <see cref="GetWaitHint"/> as the timeout when polling
+    /// so timers fire on time.
+    /// Returns -1 on Windows (IOCP has no pollable fd) or if unavailable.
+    /// Intended for Mode B (fd merge) integration only.
     /// Prefer <see cref="SetEventCallback(BunManagedEventCallback?, nint)"/> for a cross-platform wake-up mechanism.
     /// </summary>
     public int EventFileDescriptor
@@ -140,11 +144,38 @@ public sealed class BunRuntime : IDisposable
         }
     }
 
-    public bool RunPendingJobs()
+    /// <summary>
+    /// Drives the Bun event loop non-blockingly. Call this from the thread that created the runtime
+    /// to process pending timers, promises, I/O callbacks, etc.
+    /// <para>
+    /// Return-value semantics:
+    /// <see cref="BunPendingJobsResult.Idle"/> — fully idle, no active handles or pending work.
+    /// <see cref="BunPendingJobsResult.Spin"/> — more work is runnable immediately; call again.
+    /// <see cref="BunPendingJobsResult.Wait"/> — runtime is active but waiting for I/O or timers; return to your host loop.
+    /// </para>
+    /// </summary>
+    public BunPendingJobsResult RunPendingJobs()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         VerifyThread();
-        return BunNative.RunPendingJobs(Handle) != 0;
+        return BunNative.RunPendingJobs(Handle);
+    }
+
+    /// <summary>
+    /// Returns the recommended wait timeout in milliseconds for the embed host.
+    /// <para>
+    /// Return values:
+    ///   0 — work is runnable right now; call <see cref="RunPendingJobs"/> immediately.
+    ///  -1 — no JS timers pending; wait indefinitely on I/O or <see cref="Wakeup"/>.
+    ///  &gt;0 — milliseconds until the next JS timer fires.
+    /// </para>
+    /// Intended for Mode B (fd merge) integration with <see cref="EventFileDescriptor"/>.
+    /// </summary>
+    public long GetWaitHint()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        VerifyThread();
+        return BunNative.GetWaitHint(Handle);
     }
 
     /// <summary>

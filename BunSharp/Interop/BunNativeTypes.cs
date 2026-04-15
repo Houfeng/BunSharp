@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace BunSharp.Interop;
 
-internal enum BunNativeDebuggerMode
+internal enum BunNativeDebuggerMode:byte
 {
     Off = 0,
     Attach = 1,
@@ -10,7 +10,7 @@ internal enum BunNativeDebuggerMode
     Break = 3,
 }
 
-public enum BunTypedArrayKind
+public enum BunTypedArrayKind: byte
 {
     Int8Array = 0,
     Uint8Array = 1,

@@ -1,6 +1,6 @@
 namespace BunSharp;
 
-public enum BunDebuggerMode
+public enum BunDebuggerMode: byte
 {
     Off = 0,
     Attach = 1,
