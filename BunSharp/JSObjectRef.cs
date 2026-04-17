@@ -5,8 +5,9 @@ namespace BunSharp;
 /// <summary>
 /// Retains a live JavaScript object or function across calls.
 /// Call <see cref="Dispose"/> explicitly when the reference is no longer
-/// needed. If the wrapper is abandoned, a finalizer only queues the native
-/// release back onto the runtime-owning thread; runtime teardown remains the
+/// needed. If the wrapper later becomes unreachable and is garbage-collected,
+/// a finalizer queues the native release back onto the runtime-owning thread so
+/// the JS object can become collectible too. Runtime teardown remains the
 /// last-resort fallback and explicit disposal is still the recommended
 /// ownership model.
 /// </summary>

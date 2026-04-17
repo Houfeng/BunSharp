@@ -195,7 +195,7 @@ console.log(DataService.tags);
 
 `string`, `byte[]`, and `T[]` keep copy or snapshot semantics. Use explicit reference wrappers only when JS identity or shared backing storage must outlive the current call.
 
-These wrappers use explicit ownership semantics. If your code creates, stores, or returns a `JSObjectRef`, `JSFunctionRef`, `JSArrayRef`, `JSArrayBufferRef`, `JSTypedArrayRef`, or `JSBufferRef`, it currently must call `Dispose()` explicitly when that reference is no longer needed. Runtime teardown and exported-instance cleanup are fallback release paths, not the normal ownership model.
+These wrappers use explicit ownership semantics. If a C# wrapper instance becomes unreachable and is later garbage-collected, BunSharp queues the underlying JS release back onto the runtime-owning thread so the JS object can become collectible too. That path is intentionally non-deterministic. Prefer calling `Dispose()` explicitly when the reference is no longer needed; finalizer-backed release, runtime teardown, and exported-instance cleanup are fallback release paths, not the normal ownership model.
 
 - `JSObjectRef`: retain a JS object across calls and property writes
 - `JSFunctionRef`: retain a JS function and call it later from C#
@@ -208,22 +208,49 @@ Prefer keeping your domain model plain and isolating these wrappers in a small J
 
 ```csharp
 [JSExport]
-public sealed class BinaryBridge
+public sealed class BinaryBridge : IDisposable
 {
   public BinaryBridge(JSFunctionRef onFlush)
   {
+    // Constructor parameters are retained only because we store them.
     OnFlush = onFlush;
   }
 
-  public JSFunctionRef OnFlush { get; set; }
+  public JSFunctionRef? OnFlush { get; private set; }
 
-  public JSArrayRef? Children { get; set; }
+  public JSArrayRef? Children { get; private set; }
 
-  public JSArrayBufferRef? SharedBuffer { get; set; }
+  public void RememberChildren(JSArrayRef children)
+  {
+    Children?.Dispose();
+    Children = children;
+  }
+
+  public JSArrayBufferRef? SharedBuffer { get; private set; }
+
+  public void RememberSharedBuffer(JSArrayBufferRef buffer)
+  {
+    SharedBuffer?.Dispose();
+    SharedBuffer = buffer;
+  }
+
+  public void Dispose()
+  {
+    OnFlush?.Dispose();
+    OnFlush = null;
+    Children?.Dispose();
+    Children = null;
+    SharedBuffer?.Dispose();
+    SharedBuffer = null;
+  }
 }
 ```
 
 Supported export shapes for these wrappers are constructor parameters, method parameters, instance properties, and instance method return values. Static properties and static method return values that use these wrappers are rejected with `BSG010`.
+
+Passing a wrapper as a constructor parameter, method parameter, or property-setter argument does not automatically make it live for future calls. The reference stays alive only while your managed object keeps that wrapper reachable. If a later method needs the same JS object, function, or buffer, assign the incoming wrapper to a field or property yourself and dispose any replaced reference deliberately.
+
+> **Dispose guidance:** Call `Dispose()` as soon as you are done with an explicit reference wrapper. The finalizer path exists so abandoned wrappers do not keep JS objects protected forever, but it should be treated as a safety net rather than the primary lifetime model.
 
 > **Note:** `BunValue` is still supported, but it should be treated as a temporary value channel. Use explicit reference wrappers only when the value must outlive the current call, preserve JS identity, or expose shared backing storage intentionally.
 

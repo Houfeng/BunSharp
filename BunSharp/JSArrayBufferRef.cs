@@ -12,7 +12,9 @@ namespace BunSharp;
 /// <see cref="JSBufferRef"/> or <see cref="JSTypedArrayRef"/> depending on
 /// whether the element kind should be constrained to bytes.
 /// Call <see cref="Dispose"/> explicitly when the retained buffer is no longer
-/// needed. Runtime teardown is only a fallback release path.
+/// needed. If the wrapper graph is abandoned, the wrapped
+/// <see cref="JSObjectRef"/> provides the same finalizer-backed fallback
+/// release path; explicit disposal is still recommended.
 /// </summary>
 public sealed class JSArrayBufferRef : IDisposable
 {

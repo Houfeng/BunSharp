@@ -5,7 +5,9 @@ namespace BunSharp;
 /// <summary>
 /// Retains a live JavaScript Array with stable identity.
 /// Call <see cref="Dispose"/> explicitly when the array reference is no longer
-/// needed. Runtime teardown is only a fallback release path.
+/// needed. If the wrapper graph is abandoned, the wrapped
+/// <see cref="JSObjectRef"/> provides the same finalizer-backed fallback
+/// release path; explicit disposal is still recommended.
 /// </summary>
 public sealed class JSArrayRef : IDisposable
 {
