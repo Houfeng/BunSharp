@@ -12,6 +12,7 @@ public sealed class BunRuntime : IDisposable
     private readonly Dictionary<BunValue, BunObjectFinalizerRegistration> _objectFinalizerRegistrations = [];
     private readonly LinkedList<CleanupRegistration> _preDestroyCleanupCallbacks = [];
     private readonly LinkedList<CleanupRegistration> _cleanupCallbacks = [];
+    private readonly BunSynchronizationContext _syncContext;
     private readonly int _threadId;
     private BunCallbackHandle? _eventCallbackHandle;
     private BunContext? _context;
@@ -22,9 +23,12 @@ public sealed class BunRuntime : IDisposable
     {
         Handle = handle;
         _threadId = Environment.CurrentManagedThreadId;
+        _syncContext = new BunSynchronizationContext();
     }
 
     public nint Handle { get; private set; }
+
+    private BunSynchronizationContext SyncContext => _syncContext;
 
     public BunContext Context
     {
@@ -158,6 +162,7 @@ public sealed class BunRuntime : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         VerifyThread();
+        SyncContext.DoQueueWorks();
         return BunNative.RunPendingJobs(Handle);
     }
 
@@ -186,6 +191,16 @@ public sealed class BunRuntime : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         BunNative.Wakeup(Handle);
+    }
+
+    public void Post(Action callback)
+    {
+        ArgumentNullException.ThrowIfNull(callback);
+
+        if (!TryPost(callback))
+        {
+            throw new ObjectDisposedException(nameof(BunRuntime));
+        }
     }
 
     /// <summary>
@@ -233,6 +248,8 @@ public sealed class BunRuntime : IDisposable
         Interlocked.Exchange(ref _isDisposing, 1);
 
         List<Exception>? cleanupExceptions = null;
+
+        DrainSyncContextQueue(ref cleanupExceptions);
 
         RunCleanupCallbacks(this, _preDestroyCleanupCallbacks, "pre-destroy", ref cleanupExceptions);
 
@@ -346,6 +363,25 @@ public sealed class BunRuntime : IDisposable
         }
     }
 
+    internal bool TryPost(Action callback)
+    {
+        ArgumentNullException.ThrowIfNull(callback);
+
+        if (_disposed || Volatile.Read(ref _isDisposing) != 0 || Handle == 0)
+        {
+            return false;
+        }
+
+        SyncContext.Post(static state => ((Action)state!).Invoke(), callback);
+
+        if (!_disposed && Volatile.Read(ref _isDisposing) == 0 && Handle != 0)
+        {
+            BunNative.Wakeup(Handle);
+        }
+
+        return true;
+    }
+
     internal void ReportDiagnostic(BunRuntimeDiagnosticSource source, Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
@@ -452,6 +488,20 @@ public sealed class BunRuntime : IDisposable
             owner.ReportDiagnostic(BunRuntimeDiagnosticSource.Cleanup, ex);
             exceptions ??= [];
             exceptions.Add(new InvalidOperationException($"BunRuntime {description} disposal failed.", ex));
+        }
+    }
+
+    private void DrainSyncContextQueue(ref List<Exception>? exceptions)
+    {
+        try
+        {
+            SyncContext.DoQueueWorks();
+        }
+        catch (Exception ex)
+        {
+            ReportDiagnostic(BunRuntimeDiagnosticSource.Cleanup, ex);
+            exceptions ??= [];
+            exceptions.Add(new InvalidOperationException("BunRuntime synchronization context callback failed.", ex));
         }
     }
 

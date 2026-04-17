@@ -564,7 +564,7 @@ public unsafe sealed class BunContext
         owner.Retain(handle);
     }
 
-    private BunRuntime GetOwningRuntime()
+    internal BunRuntime GetOwningRuntime()
     {
         return _runtime ?? throw new InvalidOperationException("This BunContext was created from an unmanaged callback and cannot retain managed resources.");
     }

@@ -77,6 +77,55 @@ public sealed class RuntimeCleanupRegressionTests
   }
 
   [Fact]
+  public void JsObjectRef_Finalizer_QueuesRelease_ForNextOwnerThreadTick()
+  {
+    using var runtime = BunRuntime.Create();
+    var context = runtime.Context;
+    var initialCount = GetCleanupCount(runtime, "_preDestroyCleanupCallbacks");
+    var weak = CreateAbandonedObjectRef(context);
+
+    Assert.Equal(initialCount + 1, GetCleanupCount(runtime, "_preDestroyCleanupCallbacks"));
+
+    ForceFullCollection();
+
+    Assert.False(weak.TryGetTarget(out _));
+    Assert.Equal(initialCount + 1, GetCleanupCount(runtime, "_preDestroyCleanupCallbacks"));
+
+    runtime.RunPendingJobs();
+
+    Assert.Equal(initialCount, GetCleanupCount(runtime, "_preDestroyCleanupCallbacks"));
+  }
+
+  [Fact]
+  public void BunRuntime_Post_ExecutesOnNextOwnerThreadTick()
+  {
+    using var runtime = BunRuntime.Create();
+    var executed = false;
+
+    var thread = new Thread(() => runtime.Post(() => executed = true));
+    thread.Start();
+    thread.Join();
+
+    Assert.False(executed);
+
+    runtime.RunPendingJobs();
+
+    Assert.True(executed);
+  }
+
+  [Fact]
+  public void BunRuntime_Dispose_FlushesPostedCallbacks_BeforePreDestroyCleanup()
+  {
+    var runtime = BunRuntime.Create();
+    var postedExecuted = false;
+
+    runtime.Post(() => postedExecuted = true);
+    runtime.Context.RegisterPreDestroyCleanup(() => Assert.True(postedExecuted));
+
+    runtime.Dispose();
+  }
+
+  [Fact]
   public void BunRuntime_Dispose_OnWrongThread_Throws_And_RuntimeRemainsUsable()
   {
     var runtime = BunRuntime.Create();

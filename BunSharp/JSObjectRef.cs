@@ -5,8 +5,10 @@ namespace BunSharp;
 /// <summary>
 /// Retains a live JavaScript object or function across calls.
 /// Call <see cref="Dispose"/> explicitly when the reference is no longer
-/// needed. Runtime teardown is only a fallback release path and should not be
-/// treated as the normal ownership model.
+/// needed. If the wrapper is abandoned, a finalizer only queues the native
+/// release back onto the runtime-owning thread; runtime teardown remains the
+/// last-resort fallback and explicit disposal is still the recommended
+/// ownership model.
 /// </summary>
 public sealed class JSObjectRef : IDisposable
 {
@@ -32,6 +34,11 @@ public sealed class JSObjectRef : IDisposable
         }
 
         _state = new ReleaseState(context, value);
+    }
+
+    ~JSObjectRef()
+    {
+        _state?.DisposeFromFinalizer();
     }
 
     public BunContext Context
@@ -81,13 +88,18 @@ public sealed class JSObjectRef : IDisposable
     private sealed class ReleaseState : IDisposable
     {
         private readonly object _disposeSync = new();
+        private readonly BunRuntime _runtime;
+        private readonly Action _releaseProtectedValueAction;
         private BunContext? _context;
         private IDisposable? _cleanupRegistration;
         private BunValue _value;
         private bool _disposed;
+        private bool _releaseQueued;
 
         public ReleaseState(BunContext context, BunValue value)
         {
+            _runtime = context.GetOwningRuntime();
+            _releaseProtectedValueAction = ReleaseProtectedValue;
             _context = context;
             _value = value;
 
@@ -96,7 +108,7 @@ public sealed class JSObjectRef : IDisposable
             {
                 context.Protect(value);
                 protectedValue = true;
-                _cleanupRegistration = context.RegisterPreDestroyCleanup(ReleaseProtectedValue);
+                _cleanupRegistration = context.RegisterPreDestroyCleanup(_releaseProtectedValueAction);
             }
             catch (Exception ex)
             {
@@ -152,6 +164,32 @@ public sealed class JSObjectRef : IDisposable
             ReleaseProtectedValue();
         }
 
+        public void DisposeFromFinalizer()
+        {
+            try
+            {
+                lock (_disposeSync)
+                {
+                    if (_disposed || _releaseQueued)
+                    {
+                        return;
+                    }
+
+                    if (!_runtime.TryPost(_releaseProtectedValueAction))
+                    {
+                        return;
+                    }
+
+                    _releaseQueued = true;
+                }
+            }
+            catch
+            {
+                // Finalizers must never let exceptions escape the GC finalizer thread.
+                // Runtime teardown still keeps the pre-destroy cleanup fallback alive.
+            }
+        }
+
         private void ReleaseProtectedValue()
         {
             lock (_disposeSync)
@@ -174,6 +212,7 @@ public sealed class JSObjectRef : IDisposable
                 _cleanupRegistration = null;
                 _value = BunValue.Undefined;
                 _context = null;
+                _releaseQueued = false;
                 _disposed = true;
             }
         }
